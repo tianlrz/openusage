@@ -49,6 +49,8 @@ def main():
     args.add_argument('--hide-email', help='User-requested removal from local OpenUsage cards only')
     args.add_argument('--name-card', action='append', default=[], metavar='CARD_ID=NAME',
                       help='Set a local Codex card display alias without changing its login')
+    args.add_argument('--codex-history-owner', metavar='CARD_ID',
+                      help='Manually assign existing Codex history through installation time to this local card')
     options = args.parse_args()
     current = plistlib.loads((APP / 'Contents/Info.plist').read_bytes())
     if current['CFBundleShortVersionString'] != '0.7.15' or str(current['CFBundleVersion']) != '645':
@@ -93,7 +95,7 @@ def main():
     saved = backup / 'preferences.plist'
     saved.write_bytes(prefs)
     saved.chmod(0o600)
-    if options.hide_email or options.name_card:
+    if options.hide_email or options.name_card or options.codex_history_owner:
         values = plistlib.loads(prefs)
         key = 'openusage.providerAccounts.v1'
         records = json.loads(values.get(key, b'[]'))
@@ -110,6 +112,22 @@ def main():
             if not separator or not name.strip() or len(matches) != 1:
                 raise RuntimeError('Expected an existing Codex CARD_ID and a nonempty display name')
             matches[0]['displayNameOverride'] = name.strip()
+        if options.codex_history_owner:
+            matches = [record for record in records if record['id'] == options.codex_history_owner
+                       and record.get('family') == 'codex' and not record.get('removedTombstone')]
+            if len(matches) != 1:
+                raise RuntimeError('Expected one existing Codex card for historical allocation')
+            slots = set()
+            for source in matches[0].get('sources', []):
+                anchor = Path(source.get('anchor') or '')
+                marker = anchor / '.orca-managed-home'
+                if anchor.name == 'home' and marker.is_file() and marker.read_text().strip() == anchor.parent.name:
+                    slots.add(anchor.parent.name)
+            if len(slots) != 1:
+                raise RuntimeError('Historical allocation requires one verified Orca-managed account home')
+            values['openusage.orcaCodexHistoryAllocation.v1'] = json.dumps({
+                'historicalAccountSlot': next(iter(slots)), 'historicalThrough': time.time()
+            }).encode()
         values[key] = json.dumps(records).encode()
         selected = backup / 'preferences-selected.plist'
         selected.write_bytes(plistlib.dumps(values))
@@ -119,6 +137,8 @@ def main():
             print(f'Applied user-requested removal to {hidden} saved account cards; credentials unchanged.')
         if options.name_card:
             print(f'Set {len(options.name_card)} local card aliases; credentials unchanged.')
+        if options.codex_history_owner:
+            print('Saved the user-requested historical allocation; future usage uses observed session owners.')
     APP.rename(backup / 'previous-live.app')
     try:
         stage.rename(APP)

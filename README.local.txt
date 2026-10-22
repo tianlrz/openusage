@@ -12,8 +12,10 @@ Behavior:
 - One CLI read per minute at most, on the existing five-minute app refresh cycle; no new background daemon.
 - Orca timestamps are preserved and old results marked; no direct login is needed for these cards.
 - Deleted OpenUsage accounts remain removed. Restart OpenUsage after source account changes.
-- Shared Codex hardlinks cannot identify a payer; these are excluded from per-account history,
-  with a warning. Legacy unowned Claude sessions are also left unassigned.
+- Shared Codex hardlinks are read once; new usage follows continuously observed local session writers.
+- Observation gaps remain visible in a separate unassigned-usage section. A chosen historical
+  baseline can be assigned manually with --codex-history-owner CARD_ID.
+- Legacy unowned Claude sessions remain unassigned.
 - Historical cost is a token-price estimate, not subscription fees or a proven quota allowance.
 
 Validation:

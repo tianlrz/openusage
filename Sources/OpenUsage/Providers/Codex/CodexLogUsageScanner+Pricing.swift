@@ -6,7 +6,7 @@ import Foundation
 extension CodexLogUsageScanner {
     // MARK: - Aggregation
 
-    private struct EventKey: Hashable {
+    struct EventKey: Hashable {
         var timestamp: Date
         var model: String
         var pricingModel: String?
@@ -15,6 +15,12 @@ extension CodexLogUsageScanner {
         var output: Int
         var reasoning: Int
         var total: Int
+        init(_ event: Event) {
+            timestamp = event.timestamp; model = event.model; pricingModel = event.pricingModel
+            input = event.input; cached = event.cached; output = event.output
+            reasoning = event.reasoning; total = event.total
+        }
+
     }
 
     static func aggregate(
@@ -28,10 +34,7 @@ extension CodexLogUsageScanner {
         var accumulator = DailyUsageAccumulator()
 
         for event in events where event.timestamp >= since {
-            let key = EventKey(
-                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel, input: event.input,
-                cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
-            )
+            let key = EventKey(event)
             guard seen.insert(key).inserted else { continue }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)

@@ -74,13 +74,14 @@ actor CodexLogUsageScanner {
         var total: Int
         var isFast: Bool = false
         var isUltrafast: Bool = false
+        var sessionID: String? = nil
     }
 
     /// Multi-account cards that resolve the same Codex homes share this actor and parse each rollout
     /// once. The version is the parser schema version; bump it when `Event` semantics change.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
         logTag: LogTag.plugin("codex"),
-        persistence: JSONLScanCachePersistence(namespace: "codex", schemaVersion: 6)
+        persistence: JSONLScanCachePersistence(namespace: "codex", schemaVersion: 7)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -112,6 +113,13 @@ actor CodexLogUsageScanner {
         homes: CodexLogHomes, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing,
         fallbackModel: String? = nil
     ) async -> LogUsageScan? {
+        guard let events = await events(homes: homes, daysBack: daysBack, now: now) else { return nil }
+        return Self.aggregate(events: events, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
+                              pricing: pricing, fallbackModel: fallbackModel)
+    }
+
+    /// Parsed events retain their session identity so live account ownership can be applied after deduplication.
+    func events(homes: CodexLogHomes, daysBack: Int = 30, now: Date = Date()) async -> [Event]? {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let identityPaths = Set(homes.cache.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
             .sorted()
@@ -123,8 +131,7 @@ actor CodexLogUsageScanner {
             _ = await scanner.items(
                 from: [], since: since, cacheIdentity: identity, parse: Self.parseFile
             )
-            return omittedSharedFileCount > 0
-                ? LogUsageScan(series: DailyUsageSeries(daily: []), unknownModelsByDay: [:]) : nil
+            return omittedSharedFileCount > 0 ? [] : nil
         }
 
         guard let events = await scanner.items(
@@ -134,7 +141,7 @@ actor CodexLogUsageScanner {
             initialState: CodexLogFileParser(),
             parse: { data, state in state.parse(data) }
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(events: events, since: since, pricing: pricing, fallbackModel: fallbackModel)
+        return events
     }
 
     // MARK: - Discovery

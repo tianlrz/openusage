@@ -19,9 +19,15 @@ Account discovery reads the active local Orca profile. Its SQLite state takes pr
 
 Quota percentages and historical token/cost estimates are different data sources. The estimates are not subscription bills and do not reveal a provider's hidden quota formula.
 
-Orca can hardlink the same Codex rollout into several account homes. The logs do not identify the paying account, so this fork excludes files shared with another account and warns that per-account history is partial. Older Claude sessions without a proven owner are also left unassigned. No source logs are deleted or moved.
+Orca can hardlink the same Codex rollout into several account homes. The fork now reads these logs once rather than dropping the entire shared file, and deduplicates events before splitting account totals.
 
-Some oversized log records may be skipped by the existing parsers. The result is an estimate over attributable, readable history, not a complete account ledger. Account-by-day filtering and five-hour historical allowance audits remain follow-up work; this fork does not establish whether a provider reduced an account's allowance.
+New Codex usage follows local session writers: the native process's `CODEX_HOME`, process start time and writable rollout handles establish a session/account binding. A lightweight observer checks every 15 seconds and saves continuously observed ownership intervals. Switching the account selected for future launches does not move an existing session's consumption. One file lock prevents the app and one-shot CLI from overwriting each other's observations.
+
+Events outside verified intervals, from conflicting writers, after observation failures or from unobserved hosts remain in **Codex — Unassigned Usage**. This extra history section uses the existing spend/trend rows and their existing layout defaults; it is not another login and its unresolved history is not exported to iCloud. Such consumption remains visible without being charged to the wrong account. Closed short-lived sessions, app downtime and remote sessions can still leave attribution gaps; this is not a server-side billing audit.
+
+For a user-directed historical baseline, install with `--codex-history-owner CARD_ID`. All existing log events through installation time are then assigned to that Orca account, with a visible manual-allocation notice. Future events continue to use observed writers. This is an explicit bookkeeping choice, not recovered proof of the historical payer. No source logs are changed. Older Claude sessions without a proven owner remain unassigned.
+
+Some oversized log records may be skipped by the existing parsers. The result is an estimate over readable logs with observed or explicitly chosen ownership, not a complete provider billing ledger. Account-by-day filtering and five-hour historical allowance audits remain follow-up work; this fork does not establish whether a provider reduced an account's allowance.
 
 ## Build and install
 
@@ -31,7 +37,7 @@ Use full Xcode with Swift 6.2 or newer for the normal build and XCTest suite:
 git clone --branch orca-companion https://github.com/tianlrz/openusage.git
 cd openusage
 swift build -c release
-swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests'
+swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests'
 ```
 
 There is no signed fork download. For local packaging, first install upstream OpenUsage **0.7.15 (645)** and launch it once. The local installer reuses that app's resources and frameworks, backs up the original app and preferences, inserts the two compiled executables, and applies an ad-hoc signature:
@@ -54,7 +60,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The initial macOS ARM64 installation passed 13 standalone regression scenarios with 55 assertions, a native release build and deep code-signature verification. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest was unavailable on that machine because only Command Line Tools were installed; it is not reported as having passed.
+The current macOS ARM64 build passes 22 standalone regression scenarios with 88 assertions, a native release build and deep code-signature verification. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest was unavailable on that machine because only Command Line Tools were installed; it is not reported as having passed.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 

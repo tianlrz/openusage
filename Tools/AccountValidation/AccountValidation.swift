@@ -40,6 +40,24 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
             print("Codex cards: \(assembly.codex.cards.count); discovered homes: \(assembly.codex.historyHomes.homes.count)")
             return
         }
+        if CommandLine.arguments.contains("--codex-history-preview") {
+            let observer = DefaultAccountObserver(keychain: FakeKeychain())
+            let suite = "OpenUsagePreview.\(UUID())"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let assembly = await ProviderAccountAssembly.make(observer: observer,
+                accountsStore: ProviderAccountsStore(defaults: defaults),
+                desktop: ClaudeDesktopAuthStore(keyReader: NoDesktopKey()))
+            let roots = assembly.codex.historyHomes.homes.map { URL(fileURLWithPath: $0) }
+            let scanner = CodexLogUsageScanner()
+            let events = await scanner.events(homes: CodexLogHomes(read: roots, cache: roots)) ?? []
+            let scan = CodexLogUsageScanner.aggregate(events: events,
+                since: JSONLScanning.sinceDate(daysBack: 30, now: Date()),
+                pricing: await ModelPricingStore.shared.current())
+            print("Deduplicated 30-day Codex history: \(scan.series.daily.reduce(0) { $0 + $1.totalTokens }) tokens; \(scan.series.daily.reduce(0.0) { $0 + ($1.costUSD ?? 0) }) estimated USD")
+            await CodexLogUsageScanner.flushPersistentCacheWrites()
+            return
+        }
         let tests = OrcaAccountDiscoveryTests()
         defer { tests.cleanup() }
         tests.testDiscoversOnlyMarkedCodexHomesAndNoTraversalSlots()
@@ -58,7 +76,16 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try cli.testEachAccountReceivesItsOwnQuotaInsteadOfTheActiveAccountsQuota()
         try cli.testRemoteActiveQuotaNeverBecomesTheLocalAccountsQuota()
         try await cli.testFourCardsShareOneReadOnlyCLIQuery()
-        print("PASS: 14 account-isolation regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        let ownership = OrcaCodexOwnershipTests()
+        ownership.testWriterReaderUsesWritableFilesAndHandlesSpacesWithoutRetainingCredentials()
+        ownership.testConcurrentSessionsFollowTheirOwnWriters()
+        try ownership.testSwitchingAResumedSessionDoesNotMoveEarlierUsage()
+        ownership.testGapsFailuresAndReusedPIDsDoNotInventOwnership()
+        ownership.testHistoricalAllocationAndFuturePartitionsConserveUniqueEvents()
+        ownership.testSessionIdentitySurvivesIncrementalParserBatches()
+        try await ownership.testSharedFileIsCountedOnceAndHistoricalOwnerReceivesTheWholeBaseline()
+        ownership.testUnassignedUsageNeverExportsAsAnAccountOwnedHistory()
+        print("PASS: 22 account-isolation regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 

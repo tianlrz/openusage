@@ -50,6 +50,14 @@ enum ProviderCatalog {
                 )
             }
         }
+        let orcaHomes = codex.cards.flatMap(\.authHomes).reduce(into: [String: String]()) { result, path in
+            if OrcaAccountDiscovery.ownsCodexHome(path, environment: ProcessEnvironmentReader(), files: LocalTextFileAccessor()) {
+                let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+                result[canonical.deletingLastPathComponent().lastPathComponent] = canonical.path
+            }
+        }
+        let orcaHistoryContext = orcaHomes.isEmpty ? nil : OrcaCodexHistoryContext(
+            homes: orcaHomes, allHistoryHomes: codex.historyHomes.homes)
         if codex.cards.isEmpty {
             providers.append(CodexProvider(
                 authStore: CodexAuthStore(
@@ -66,6 +74,7 @@ enum ProviderCatalog {
                         OrcaAccountDiscovery.ownsCodexHome($0, environment: ProcessEnvironmentReader(),
                                                           files: LocalTextFileAccessor())
                     }).map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent },
+                    orcaHistoryContext: orcaHistoryContext,
                     provider: CodexProvider.makeProvider(id: card.id, displayName: card.displayName),
                     authStore: CodexAuthStore(
                         expectedIdentity: card.identity,
@@ -77,6 +86,7 @@ enum ProviderCatalog {
                 )
             }
         }
+        if let context = orcaHistoryContext { providers.append(CodexUnassignedUsageProvider(context: context)) }
         providers += [
             CursorProvider(),
             AntigravityProvider(),

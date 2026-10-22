@@ -12,6 +12,7 @@ final class CodexProvider: ProviderRuntime {
     let provider: Provider
     let historyScope: CodexHistoryScope
     let orcaAccountSlot: String?
+    let orcaHistoryContext: OrcaCodexHistoryContext?
 
     private let localHistory = CodexHistoryRefresh<CodexLocalHistory>()
     let localHistoryWait: Duration
@@ -28,6 +29,7 @@ final class CodexProvider: ProviderRuntime {
     init(
         localHistoryWait: Duration = .seconds(5),
         orcaAccountSlot: String? = nil,
+        orcaHistoryContext: OrcaCodexHistoryContext? = nil,
         provider: Provider = CodexProvider.makeProvider(),
         authStore: CodexAuthStore = CodexAuthStore(),
         usageClient: CodexUsageClient = CodexUsageClient(),
@@ -41,6 +43,7 @@ final class CodexProvider: ProviderRuntime {
     ) {
         self.localHistoryWait = localHistoryWait
         self.orcaAccountSlot = orcaAccountSlot
+        self.orcaHistoryContext = orcaHistoryContext
         self.provider = provider
         self.historyScope = historyScope
         self.authStore = authStore
@@ -186,10 +189,11 @@ final class CodexProvider: ProviderRuntime {
         let piCardID = ProviderAccountID.family(of: provider.id)
         let history = await localHistory.value(wait: localHistoryWait) {
             [pricing, fallbackModel, historyScope, authStore, logUsageScanner, piUsageScanner,
-             openCodeUsageScanner, now] in
+             openCodeUsageScanner, now, orcaAccountSlot, orcaHistoryContext] in
             let claims = await Self.historyClaims(scope: historyScope, authStore: authStore,
                                                   logUsageScanner: logUsageScanner)
             return await Self.scanLocalHistory(
+                orcaAccountSlot: orcaAccountSlot, orcaHistoryContext: orcaHistoryContext,
                 claims: claims, claimsPiUsage: historyScope.claimsPiUsage, piCardID: piCardID, pricing: pricing, fallbackModel: fallbackModel, logUsageScanner: logUsageScanner,
                 piUsageScanner: piUsageScanner, openCodeUsageScanner: openCodeUsageScanner, now: now
             )
@@ -237,6 +241,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private static func scanLocalHistory(
+        orcaAccountSlot: String?, orcaHistoryContext: OrcaCodexHistoryContext?,
         claims: CodexHistoryClaims,
         claimsPiUsage: Bool,
         piCardID: String,
@@ -251,9 +256,14 @@ final class CodexProvider: ProviderRuntime {
         // Three independent local sources: reading rollout files, pi's JSONL, and OpenCode's SQLite
         // concurrently keeps the slowest one — not their sum — on the background scan's path.
         let selectedFallbackModel = fallbackModel()
-        async let native = logUsageScanner.scan(
-            homes: claims.logHomes, now: now(), pricing: pricing, fallbackModel: selectedFallbackModel
-        )
+        async let native: LogUsageScan? = {
+            if let slot = orcaAccountSlot, let context = orcaHistoryContext {
+                return await OrcaCodexHistory.shared.scan(accountSlot: slot, context: context, now: now(),
+                    pricing: pricing, fallbackModel: selectedFallbackModel)
+            }
+            return await logUsageScanner.scan(homes: claims.logHomes, now: now(),
+                pricing: pricing, fallbackModel: selectedFallbackModel)
+        }()
         async let pi = claimsPiUsage ? piUsageScanner.scan(
             cardID: piCardID, now: now(), pricing: pricing,
             estimateCost: { CodexUsagePricing.estimatedCost(pricing: pricing, model: $0, tokens: $1, at: $2) }
@@ -261,8 +271,12 @@ final class CodexProvider: ProviderRuntime {
         async let openCode = claims.ownsDefaultLogin ? openCodeUsageScanner.scan(now: now(), pricing: pricing) : nil
         let (nativeScan, piScan, openCodeScan) = await (native, pi, openCode)
         let omittedShared = await logUsageScanner.omittedSharedFileCount
-        let warning = omittedShared > 0
-            ? "Shared imported session history is excluded from per-account totals." : nil
+        let warning: String?
+        if orcaHistoryContext != nil {
+            warning = await OrcaCodexHistory.shared.warning(accountSlot: orcaAccountSlot)
+        } else {
+            warning = omittedShared > 0 ? "Shared imported session history is excluded from per-account totals." : nil
+        }
         let baseNote = Self.localUsageSourceNote(hasPi: piScan != nil, hasOpenCode: openCodeScan != nil)
             + (warning.map { " " + $0 } ?? "")
         var usageHistory: ProviderUsageHistory?

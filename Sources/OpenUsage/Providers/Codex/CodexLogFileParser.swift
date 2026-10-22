@@ -13,6 +13,7 @@ struct CodexLogFileParser: Sendable {
     private var currentTierIsFast = false
     private var currentTierIsUltrafast = false
     private var sawSessionMeta = false
+    private var sessionID: String?
     private var replayGate: ChildReplayGate?
 
     mutating func parse(_ data: Data) -> [CodexLogUsageScanner.Event] {
@@ -40,6 +41,7 @@ struct CodexLogFileParser: Sendable {
             // A child rollout also replays its parent's metadata; only its first metadata is its own.
             if type == "session_meta", !sawSessionMeta {
                 sawSessionMeta = true
+                sessionID = (payload?["id"] as? String)?.lowercased()
                 if let payload, CodexLogUsageScanner.isChildSessionMeta(payload) {
                     if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
                        let created = OpenUsageISO8601.date(from: timestampRaw) {
@@ -112,7 +114,8 @@ struct CodexLogFileParser: Sendable {
                 reasoning: usage.reasoning,
                 total: usage.total,
                 isFast: currentTierIsFast,
-                isUltrafast: currentTierIsUltrafast
+                isUltrafast: currentTierIsUltrafast,
+                sessionID: sessionID
             ))
         }
         return events
