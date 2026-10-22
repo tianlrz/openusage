@@ -47,6 +47,8 @@ def main():
     args = argparse.ArgumentParser(description=__doc__)
     args.add_argument('--restore', action='store_true')
     args.add_argument('--hide-email', help='User-requested removal from local OpenUsage cards only')
+    args.add_argument('--name-card', action='append', default=[], metavar='CARD_ID=NAME',
+                      help='Set a local Codex card display alias without changing its login')
     options = args.parse_args()
     current = plistlib.loads((APP / 'Contents/Info.plist').read_bytes())
     if current['CFBundleShortVersionString'] != '0.7.15' or str(current['CFBundleVersion']) != '645':
@@ -91,22 +93,32 @@ def main():
     saved = backup / 'preferences.plist'
     saved.write_bytes(prefs)
     saved.chmod(0o600)
-    if options.hide_email:
+    if options.hide_email or options.name_card:
         values = plistlib.loads(prefs)
         key = 'openusage.providerAccounts.v1'
         records = json.loads(values.get(key, b'[]'))
         hidden = 0
         for record in records:
-            if options.hide_email.casefold() in (record.get('label') or '').casefold():
+            if options.hide_email and options.hide_email.casefold() in (record.get('label') or '').casefold():
                 if record.get('family') in ['claude', 'codex']:
                     record['removedTombstone'] = True
                     hidden += 1
+        for assignment in options.name_card:
+            card_id, separator, name = assignment.partition('=')
+            matches = [record for record in records if record['id'] == card_id
+                       and record.get('family') == 'codex' and not record.get('removedTombstone')]
+            if not separator or not name.strip() or len(matches) != 1:
+                raise RuntimeError('Expected an existing Codex CARD_ID and a nonempty display name')
+            matches[0]['displayNameOverride'] = name.strip()
         values[key] = json.dumps(records).encode()
         selected = backup / 'preferences-selected.plist'
         selected.write_bytes(plistlib.dumps(values))
         selected.chmod(0o600)
         run('defaults', 'import', 'com.robinebers.openusage', selected)
-        print(f'Applied user-requested removal to {hidden} saved account cards; credentials unchanged.')
+        if options.hide_email:
+            print(f'Applied user-requested removal to {hidden} saved account cards; credentials unchanged.')
+        if options.name_card:
+            print(f'Set {len(options.name_card)} local card aliases; credentials unchanged.')
     APP.rename(backup / 'previous-live.app')
     try:
         stage.rename(APP)

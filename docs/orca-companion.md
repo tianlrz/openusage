@@ -40,6 +40,8 @@ There is no signed fork download. For local packaging, first install upstream Op
 python3 script/local-account-install.py
 ```
 
+To set a local display alias while installing, pass `--name-card 'CARD_ID=NAME'` (repeat for several Codex cards). Use the stable card ID shown by `/v1/usage`; for example, `--name-card 'codex=Work'`. The alias survives account discovery without changing credentials, discovered email or usage ownership. Personal aliases are stored only in local preferences.
+
 The original official update feed remains enabled. An official update can replace the patch. The app version stays unchanged; no upstream release is published. Local backups and the installation receipt are ignored by git and must remain private.
 
 Restore the saved application while retaining current preferences:

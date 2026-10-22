@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import OpenUsage
 
@@ -55,6 +56,31 @@ final class OrcaAccountDiscoveryTests: XCTestCase {
             XCTAssertNil(state.auth.tokens?.refreshToken)
             XCTAssertEqual(CodexAccountIdentity(auth: state.auth), card.identity)
         }
+    }
+
+    func testCodexDisplayAliasSurvivesDiscoveryWithoutChangingTheAccount() async throws {
+        let files = fixtureFiles()
+        let directories = homes("codex")
+        let defaults = makeScratchDefaults("OrcaAliases")
+        let observer = DefaultAccountObserver(environment: FakeEnvironment(), files: files,
+            keychain: FakeKeychain(), homeDirectory: { [home] in home })
+        let store = ProviderAccountsStore(defaults: defaults)
+        let before = await ProviderAccountAssembly.make(observer: observer, accountsStore: store,
+            listCodexHomeDirectories: { directories[$0] ?? [] })
+        let original = try XCTUnwrap(before.codex.cards.first)
+        var records = store.records
+        let index = try XCTUnwrap(records.firstIndex(where: { $0.id == original.id }))
+        records[index].displayNameOverride = "Personal"
+        defaults.set(try JSONEncoder().encode(records), forKey: ProviderAccountsStore.storageKey)
+        let after = await ProviderAccountAssembly.make(observer: observer,
+            accountsStore: ProviderAccountsStore(defaults: defaults),
+            listCodexHomeDirectories: { directories[$0] ?? [] })
+        let renamed = try XCTUnwrap(after.codex.cards.first(where: { $0.id == original.id }))
+        XCTAssertEqual(renamed.displayName, "Personal")
+        XCTAssertEqual(renamed.identity, original.identity)
+        XCTAssertEqual(renamed.authHomes, original.authHomes)
+        let saved = ProviderAccountsStore(defaults: defaults).records.first(where: { $0.id == original.id })
+        XCTAssertEqual(saved?.displayNameOverride, "Personal")
     }
 
     func testManagedCodexHomeIsReadOnlyEvenWhenConfiguredAsTheDefault() throws {

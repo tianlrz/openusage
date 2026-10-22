@@ -54,6 +54,8 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
     var sources: [ProviderAccountSource]
     /// Set by a future "Remove Account…". A tombstoned account is never resurrected by rescans.
     var removedTombstone: Bool = false
+    /// A local display alias; account identity and discovered email stay unchanged.
+    var displayNameOverride: String? = nil
 }
 
 /// The account-first registry (`openusage.providerAccounts.v1`). Reconciled at every launch from the

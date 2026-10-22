@@ -45,6 +45,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         tests.testDiscoversOnlyMarkedCodexHomesAndNoTraversalSlots()
         try await tests.testBothCodexAccountsHaveTheirOwnHomesAndReadOnlyCredentials()
         try tests.testManagedCodexHomeIsReadOnlyEvenWhenConfiguredAsTheDefault()
+        try await tests.testCodexDisplayAliasSurvivesDiscoveryWithoutChangingTheAccount()
         try tests.testManagedCodexCredentialCannotBypassTheExpectedAccount()
         try await tests.testClaudeAccountsDeduplicateTheDefaultLoginAndRemainStable()
         try tests.testClaudeReadsTheSpecificKeychainSlotWithoutRotatingOrWriting()
@@ -57,7 +58,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try cli.testEachAccountReceivesItsOwnQuotaInsteadOfTheActiveAccountsQuota()
         try cli.testRemoteActiveQuotaNeverBecomesTheLocalAccountsQuota()
         try await cli.testFourCardsShareOneReadOnlyCLIQuery()
-        print("PASS: 13 account-isolation regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        print("PASS: 14 account-isolation regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 

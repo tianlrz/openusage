@@ -164,7 +164,7 @@ extension ProviderAccountAssembly {
             let writableHomes = Set(matchingHomes.map { CodexHomeScanner.canonicalHome($0, homeDirectory: homeDirectory) })
                 .subtracting(managedHomes)
             return CodexAccountCard(id: record.id, identity: identity,
-                displayName: labels[identity.key] ?? "Codex",
+                displayName: record.displayNameOverride?.nilIfEmpty ?? labels[identity.key] ?? "Codex",
                 authHomes: Set(matchingHomes + matchingSwapHomes).sorted(),
                 writableAuthHomes: writableHomes.sorted(),
                 piCredentialSources: matchingPi, claimsPiUsage: piUsageOwner == identity)
