@@ -6,6 +6,7 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
     case desktopPermissionRequired
     case desktopTokenExpired
     case swapTokenExpired
+    case orcaTokenExpired
     case desktopCredentialsUnavailable
     case sessionExpired
     case tokenExpired
@@ -20,6 +21,8 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
             return "Claude Desktop login found. Refresh once and choose Always Allow to connect it."
         case .swapTokenExpired:
             return "Claude Swap login is stale. Launch this account with `cswap run`, then refresh OpenUsage."
+        case .orcaTokenExpired:
+            return "Orca login is stale. Use this account in Orca, then refresh OpenUsage."
         case .desktopTokenExpired:
             return "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage."
         case .desktopCredentialsUnavailable:
@@ -43,7 +46,7 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
     /// `CodexAuthError.allowsAuthFallback`.
     var allowsAuthFallback: Bool {
         switch self {
-        case .sessionExpired, .tokenExpired, .desktopTokenExpired, .swapTokenExpired:
+        case .sessionExpired, .tokenExpired, .desktopTokenExpired, .swapTokenExpired, .orcaTokenExpired:
             return true
         case .notLoggedIn, .desktopPermissionRequired, .desktopCredentialsUnavailable,
              .credentialsChanged, .invalidOAuthURL:
@@ -76,6 +79,7 @@ struct ClaudeAuthStore: Sendable {
     let expectedIdentityKey: String?
     let desktopOnly: Bool
     let swapAccount: ClaudeSwapAccount?
+    let orcaAccounts: [OrcaClaudeAccount]
     let preferOrganizationScopedDesktop: Bool
 
     init(
@@ -87,6 +91,7 @@ struct ClaudeAuthStore: Sendable {
         expectedIdentityKey: String? = nil,
         desktopOnly: Bool = false,
         swapAccount: ClaudeSwapAccount? = nil,
+        orcaAccounts: [OrcaClaudeAccount] = [],
         preferOrganizationScopedDesktop: Bool = false,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -98,6 +103,7 @@ struct ClaudeAuthStore: Sendable {
         self.expectedIdentityKey = expectedIdentityKey?.lowercased() ?? swapAccount?.identityKey
         self.desktopOnly = desktopOnly
         self.swapAccount = swapAccount
+        self.orcaAccounts = orcaAccounts
         self.preferOrganizationScopedDesktop = preferOrganizationScopedDesktop
         self.now = now
     }
@@ -111,6 +117,10 @@ struct ClaudeAuthStore: Sendable {
         allowDesktopInteraction: Bool = false,
         forceDesktopFallback: Bool = false
     ) -> ClaudeCredentialLoad {
+        if !orcaAccounts.isEmpty {
+            return ClaudeCredentialLoad(candidates: orcaAccounts.compactMap(loadOrcaCredential),
+                                        desktopStatus: .notChecked)
+        }
         var stored: [ClaudeCredentialState]
         if let swapAccount {
             var candidates: [ClaudeCredentialState] = []
@@ -234,7 +244,7 @@ struct ClaudeAuthStore: Sendable {
             try keychain.writeGenericPasswordForCurrentUser(service: service, value: text)
         case .keychainLegacy(let service):
             try keychain.writeGenericPassword(service: service, value: text)
-        case .desktop, .swapVault:
+        case .desktop, .swapVault, .orcaManaged:
             return false
         case .environment:
             return false
@@ -337,11 +347,11 @@ struct ClaudeAuthStore: Sendable {
         )
     }
 
-    func keychainServiceCandidates() -> [String] {
+    func keychainServiceCandidates(scopedConfigDirectory: String? = nil) -> [String] {
         // Only needs the file suffix, which never fails — keep this off the throwing URL path so
         // credential loading stays forgiving even when a custom OAuth URL is malformed.
         let base = "\(Self.keychainServicePrefix)\(resolveOAuthEndpoints().suffix)-credentials"
-        if let configDir = claudeHomeOverride() {
+        if let configDir = scopedConfigDirectory ?? claudeHomeOverride() {
             let scoped = "\(base)-\(hashSuffix(configDir))"
             return swapAccount == nil ? [scoped, base] : [scoped]
         }

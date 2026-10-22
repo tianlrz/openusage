@@ -101,6 +101,7 @@ final class ClaudeProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
+        if !authStore.orcaAccounts.isEmpty { return true }
         // Never trigger another app's Keychain prompt during first-run detection. Encrypted Desktop
         // material still counts as a local login; the first manual refresh requests access if needed.
         let load = await loadOffMainActor { [authStore] in authStore.loadCredentialSet() }
@@ -109,7 +110,8 @@ final class ClaudeProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        await refresh(
+        if let account = authStore.orcaAccounts.first { return await refreshOrcaUsage(slot: account.slot) }
+        return await refresh(
             credentialReloadsRemaining: 1,
             forceDesktopFallback: false,
             previousFallbackError: nil
@@ -205,7 +207,7 @@ final class ClaudeProvider: ProviderRuntime {
         for state in candidates {
             // The environment token cannot read subscription usage. If a CLI login was rejected, try
             // Desktop before this spend-only fallback can turn the refresh into a false success.
-            if !forceDesktopFallback,
+            if !forceDesktopFallback, authStore.orcaAccounts.isEmpty,
                lastFallbackError != nil,
                credentialLoad.desktopStatus == .notChecked,
                authStore.liveUsageAvailability(state) == .inferenceOnlyToken
@@ -239,7 +241,7 @@ final class ClaudeProvider: ProviderRuntime {
                 return ProviderSnapshot.error(provider: provider, error: error)
             }
         }
-        if !forceDesktopFallback,
+        if !forceDesktopFallback, authStore.orcaAccounts.isEmpty,
            lastFallbackError != nil,
            credentialLoad.desktopStatus == .notChecked
         {
@@ -300,7 +302,7 @@ final class ClaudeProvider: ProviderRuntime {
         return await snapshotWithLocalUsage(mapped: mapped, warning: warning)
     }
 
-    private func snapshotWithLocalUsage(
+    func snapshotWithLocalUsage(
         mapped initialUsage: ClaudeMappedUsage,
         warning: String?
     ) async -> ProviderSnapshot {
@@ -387,6 +389,9 @@ final class ClaudeProvider: ProviderRuntime {
                 )
             },
             refreshAccessToken: {
+                if working.source == .orcaManaged {
+                    throw ClaudeAuthError.orcaTokenExpired
+                }
                 if working.source == .swapVault {
                     throw ClaudeAuthError.swapTokenExpired
                 }

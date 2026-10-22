@@ -19,9 +19,16 @@ enum ProviderCatalog {
             providers = claudeCards.map { card in
                 let identity = claudeIdentityKeys[card.id] ?? card.identityKey
                 let user = identity.split(separator: "|").first.map(String.init)
+                let defaultOwner: (@Sendable () -> String?)?
+                if claudeCards.count > 1 {
+                    defaultOwner = { nil }
+                } else {
+                    defaultOwner = nil
+                }
                 let scanner = ClaudeLogUsageScanner(
                     accountUUID: user, organizationUUID: card.organizationID,
                     allowsUnattributedSessions: card.allowsUnattributedPiUsage,
+                    currentDefaultLoginIdentity: defaultOwner,
                     additionalConfigDirectories: card.additionalLogDirectories
                 )
                 return ClaudeProvider(
@@ -34,6 +41,7 @@ enum ProviderCatalog {
                         expectedIdentityKey: identity,
                         desktopOnly: card.usesDesktopCredentials,
                         swapAccount: card.swapAccount,
+                        orcaAccounts: card.orcaAccounts,
                         preferOrganizationScopedDesktop: claudeCards.count > 1
                             && card.organizationID != nil && !card.usesDesktopCredentials
                     ),
@@ -54,6 +62,10 @@ enum ProviderCatalog {
         } else {
             providers += codex.cards.map { card in
                 CodexProvider(
+                    orcaAccountSlot: card.authHomes.first(where: {
+                        OrcaAccountDiscovery.ownsCodexHome($0, environment: ProcessEnvironmentReader(),
+                                                          files: LocalTextFileAccessor())
+                    }).map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent },
                     provider: CodexProvider.makeProvider(id: card.id, displayName: card.displayName),
                     authStore: CodexAuthStore(
                         expectedIdentity: card.identity,

@@ -8,6 +8,7 @@ struct ClaudeAccountCard: Equatable, Sendable {
     let usesDesktopCredentials: Bool
     let allowsUnattributedPiUsage: Bool
     var swapAccount: ClaudeSwapAccount? = nil
+    var orcaAccounts: [OrcaClaudeAccount] = []
     var additionalLogDirectories: [String] = []
     var organizationName: String? = nil
 }
@@ -127,6 +128,19 @@ struct ProviderAccountAssembly {
             return ProviderAccountAssembly(identityKeysByCard: identityKeys, codex: codex)
         }
 
+        let orcaAccounts = OrcaClaudeAccount.discover(
+            environment: observer.environment, files: observer.files, home: observer.homeDirectory(),
+            listDirectories: listCodexHomeDirectories
+        )
+        for account in orcaAccounts {
+            let source = ProviderAccountSource(kind: .defaultHome, anchor: account.home, holdsDefaultSource: false)
+            if let index = observations.firstIndex(where: { $0.family == "claude" && $0.identityKey == account.identityKey }) {
+                observations[index].sources.append(source)
+            } else {
+                observations.append(.init(family: "claude", identityKey: account.identityKey,
+                                          label: account.label, sources: [source]))
+            }
+        }
         let swapAccounts = ClaudeSwapAccount.discover(files: observer.files, home: observer.homeDirectory())
         if !swapAccounts.isEmpty {
             AppLog.info(.config, "accounts: discovered \(swapAccounts.count) Claude Swap accounts")
@@ -144,7 +158,7 @@ struct ProviderAccountAssembly {
             }
         }
 
-        if let claudeIdentity = identityKeys["claude"], !claudeIdentity.contains("|"), swapAccounts.isEmpty {
+        if let claudeIdentity = identityKeys["claude"], !claudeIdentity.contains("|"), swapAccounts.isEmpty, orcaAccounts.isEmpty {
             accountsStore.reconcile(with: observations)
             return ProviderAccountAssembly(identityKeysByCard: identityKeys, codex: codex)
         }
@@ -152,11 +166,12 @@ struct ProviderAccountAssembly {
         let desktop = desktop ?? ClaudeDesktopAuthStore(
             files: observer.files, homeDirectory: observer.homeDirectory
         )
-        let desktopOrganizations = discoverDesktopOrganizations(
+        // Orca's account list owns these cards; decrypting Desktop would add unrelated logins and prompts.
+        let desktopOrganizations = orcaAccounts.isEmpty ? discoverDesktopOrganizations(
             desktop: desktop,
             cliIdentity: identityKeys["claude"],
             listDirectories: listDesktopOrganizationDirectories
-        )
+        ) : []
         let desktopAnchor = desktop.homeDirectory()
             .appendingPathComponent("Library/Application Support/Claude").path
         for organization in desktopOrganizations {
@@ -248,8 +263,19 @@ struct ProviderAccountAssembly {
             ))
             identityKeys[record.id] = account.identityKey
         }
+        for account in orcaAccounts {
+            if let index = cards.firstIndex(where: { $0.identityKey == account.identityKey }) {
+                cards[index].orcaAccounts.append(account)
+            } else if let record = records.first(where: { $0.family == "claude" && $0.identityKey == account.identityKey && !$0.removedTombstone }) {
+                cards.append(ClaudeAccountCard(id: record.id, identityKey: account.identityKey,
+                    organizationID: account.organizationID, displayName: "Claude: \(account.label)",
+                    usesDesktopCredentials: false, allowsUnattributedPiUsage: allowsUnattributedPiUsage,
+                    orcaAccounts: [account]))
+                identityKeys[record.id] = account.identityKey
+            }
+        }
         for index in cards.indices {
-            cards[index].additionalLogDirectories = swapAccounts.map(\.sessionDirectory)
+            cards[index].additionalLogDirectories = swapAccounts.map(\.sessionDirectory) + orcaAccounts.map(\.home)
         }
         return ProviderAccountAssembly(identityKeysByCard: identityKeys, claudeCards: cards, codex: codex)
     }

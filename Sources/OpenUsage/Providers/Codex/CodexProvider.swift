@@ -11,6 +11,7 @@ final class CodexProvider: ProviderRuntime {
 
     let provider: Provider
     let historyScope: CodexHistoryScope
+    let orcaAccountSlot: String?
 
     private let localHistory = CodexHistoryRefresh<CodexLocalHistory>()
     let localHistoryWait: Duration
@@ -26,6 +27,7 @@ final class CodexProvider: ProviderRuntime {
 
     init(
         localHistoryWait: Duration = .seconds(5),
+        orcaAccountSlot: String? = nil,
         provider: Provider = CodexProvider.makeProvider(),
         authStore: CodexAuthStore = CodexAuthStore(),
         usageClient: CodexUsageClient = CodexUsageClient(),
@@ -38,6 +40,7 @@ final class CodexProvider: ProviderRuntime {
         fallbackModel: @escaping @MainActor () -> String? = { CodexFallbackModelSetting.current() }
     ) {
         self.localHistoryWait = localHistoryWait
+        self.orcaAccountSlot = orcaAccountSlot
         self.provider = provider
         self.historyScope = historyScope
         self.authStore = authStore
@@ -78,6 +81,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
+        if orcaAccountSlot != nil { return true }
         // Same sources as `refresh()`: auth.json candidates first, keychain as the fallback. Only a
         // usable access token counts (see `hasUsableAccessToken`) — an API-key-only auth.json can't
         // serve the usage API, so seeding it on would just show an error row.
@@ -96,6 +100,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        if let slot = orcaAccountSlot { return await refreshOrcaUsage(slot: slot) }
         if authStore.expectedIdentity != nil { return await refreshAccount() }
         let fileCandidates = authStore.loadAuthCandidates()
         var lastFallbackError: Error?
@@ -202,8 +207,8 @@ final class CodexProvider: ProviderRuntime {
                 fallbackPricingModelsByDay: usage.fallbackPricingModelsByDay
             )
         }
-        let warning = history == nil ? "Local token history is still updating." : nil
-        if warning != nil {
+        let warning = history == nil ? "Local token history is still updating." : history?.warning
+        if history == nil {
             AppLog.warn(LogTag.plugin("codex"), "local history scan deferred; publishing live quota")
         }
         // Pending history is not evidence of no usage. The store may restore last-good spend rows.
@@ -217,6 +222,7 @@ final class CodexProvider: ProviderRuntime {
     private struct CodexLocalHistory: Sendable {
         var sourceNote: String
         var usageHistory: ProviderUsageHistory?
+        var warning: String?
     }
 
     private static func historyClaims(
@@ -254,7 +260,11 @@ final class CodexProvider: ProviderRuntime {
         ) : nil
         async let openCode = claims.ownsDefaultLogin ? openCodeUsageScanner.scan(now: now(), pricing: pricing) : nil
         let (nativeScan, piScan, openCodeScan) = await (native, pi, openCode)
+        let omittedShared = await logUsageScanner.omittedSharedFileCount
+        let warning = omittedShared > 0
+            ? "Shared imported session history is excluded from per-account totals." : nil
         let baseNote = Self.localUsageSourceNote(hasPi: piScan != nil, hasOpenCode: openCodeScan != nil)
+            + (warning.map { " " + $0 } ?? "")
         var usageHistory: ProviderUsageHistory?
         // Cancellation must not publish a partial combined history.
         if !Task.isCancelled {
@@ -273,7 +283,7 @@ final class CodexProvider: ProviderRuntime {
         }
 
         AppLog.info(LogTag.plugin("codex"), "local history scan completed")
-        return CodexLocalHistory(sourceNote: baseNote, usageHistory: usageHistory)
+        return CodexLocalHistory(sourceNote: baseNote, usageHistory: usageHistory, warning: warning)
     }
 
     private static func localUsageSourceNote(hasPi: Bool, hasOpenCode: Bool) -> String {

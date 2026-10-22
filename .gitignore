@@ -29,3 +29,8 @@ node_modules/
 # Local appcast / Sparkle feed output
 feed/
 appcast.xml
+
+# Private local installation receipts and backups
+local-backups/
+local-install-receipt.json
+__pycache__/

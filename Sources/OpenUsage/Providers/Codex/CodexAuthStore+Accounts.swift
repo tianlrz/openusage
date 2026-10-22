@@ -3,6 +3,16 @@ import Foundation
 extension CodexAuthStore {
     func scoped(_ candidate: CodexAuthState) -> CodexAuthState? {
         var candidate = candidate
+        if case .file(let path) = candidate.source,
+           OrcaAccountDiscovery.ownsCodexHome((path as NSString).deletingLastPathComponent,
+                                              environment: environment, files: files) {
+            if let expectedIdentity, CodexAccountIdentity(auth: candidate.auth) != expectedIdentity {
+                return nil
+            }
+            candidate.auth.tokens?.refreshToken = nil
+            candidate.readOnly = true
+            return candidate
+        }
         if let expectedIdentity {
             guard candidate.hasUsableAccessToken,
                   CodexAccountIdentity(auth: candidate.auth) == expectedIdentity else { return nil }

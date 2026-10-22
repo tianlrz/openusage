@@ -3,9 +3,9 @@ name: CI
 on:
   # The Swift edition ships from `main`. The frozen Tauri edition is preserved on `tauri-legacy`.
   push:
-    branches: [main]
+    branches: [main, orca-companion]
   pull_request:
-    branches: [main]
+    branches: [main, orca-companion]
 
 permissions:
   contents: read

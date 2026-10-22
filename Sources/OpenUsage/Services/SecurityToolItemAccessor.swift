@@ -16,6 +16,7 @@ struct SecurityToolItemAccessor: SecurityItemAccessing {
 
     static func handles(service: String) -> Bool {
         service.hasPrefix(ClaudeAuthStore.keychainServicePrefix)
+            || service == "Orca Claude Code Managed Credentials"
             || service.hasSuffix(KeychainICloudDeviceIDStore.serviceSuffix)
             || [
                 CopilotAuthStore.ghKeychainService,

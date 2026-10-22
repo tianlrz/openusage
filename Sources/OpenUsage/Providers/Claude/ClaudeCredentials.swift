@@ -47,6 +47,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
         case keychainLegacy(service: String)
         case desktop
         case swapVault
+        case orcaManaged
         case environment
 
         /// Log-safe source kind , NEVER the keychain service name or any token.
@@ -57,6 +58,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
             case .keychainLegacy: "keychainLegacy"
             case .desktop: "desktop"
             case .swapVault: "swapVault"
+            case .orcaManaged: "orcaManaged"
             case .environment: "environment"
             }
         }

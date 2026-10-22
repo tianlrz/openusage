@@ -58,6 +58,7 @@ actor CodexLogUsageScanner {
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Event>
     private let additionalHomes: [String]
+    private(set) var omittedSharedFileCount = 0
 
     /// One turn's token usage, normalized from a `token_count` line (deltas already applied).
     /// `isFast` and `isUltrafast` record the service tier when the turn ran, tracked from the
@@ -115,12 +116,15 @@ actor CodexLogUsageScanner {
         let identityPaths = Set(homes.cache.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
             .sorted()
         let identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
-        let files = Self.sessionFiles(homes: homes.read, foreignHomes: homes.foreign)
+        let discovered = Self.sessionFiles(homes: homes.read, foreignHomes: homes.foreign)
+        let files = discovered.files
+        omittedSharedFileCount = discovered.omittedShared
         guard !files.isEmpty else {
             _ = await scanner.items(
                 from: [], since: since, cacheIdentity: identity, parse: Self.parseFile
             )
-            return nil
+            return omittedSharedFileCount > 0
+                ? LogUsageScan(series: DailyUsageSeries(daily: []), unknownModelsByDay: [:]) : nil
         }
 
         guard let events = await scanner.items(
@@ -158,11 +162,32 @@ actor CodexLogUsageScanner {
     /// neither is scanned directly, ccusage's fallback). When both dirs of one home contain the same
     /// relative path, the `sessions/` copy wins — an archived duplicate must not double-count.
     /// A dir linked into another account's home (xswap's shared history) counts only with that home.
+    /// Hardlinks shared with another account have unknown ownership and are excluded from both.
     /// A foreign path that is merely an alias of an owned home never shadows it.
-    private static func sessionFiles(homes: [URL], foreignHomes: [URL]) -> [JSONLScanning.DiscoveredFile] {
+    private struct FileIdentity: Hashable {
+        let device: UInt64
+        let inode: UInt64
+        init?(_ path: String) {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+                  let device = attributes[.systemNumber] as? NSNumber,
+                  let inode = attributes[.systemFileNumber] as? NSNumber else { return nil }
+            self.device = device.uint64Value
+            self.inode = inode.uint64Value
+        }
+    }
+
+    private static func sessionFiles(
+        homes: [URL], foreignHomes: [URL]
+    ) -> (files: [JSONLScanning.DiscoveredFile], omittedShared: Int) {
         var files: [JSONLScanning.DiscoveredFile] = []
-        var seenDirs = Set(foreignHomes.flatMap(ownSessionDirs(of:)))
+        let foreignDirs = Set(foreignHomes.flatMap(ownSessionDirs(of:)))
             .subtracting(homes.flatMap(ownSessionDirs(of:)))
+        let foreignFiles = Set(foreignDirs.flatMap {
+            JSONLScanning.jsonlFiles(under: URL(fileURLWithPath: $0)).compactMap { FileIdentity($0.path) }
+        })
+        var seenFiles = Set<FileIdentity>()
+        var omittedShared = Set<FileIdentity>()
+        var seenDirs = foreignDirs
         for home in homes {
             var seenRelative: Set<String> = []
             var sourceDirs: [URL] = []
@@ -183,11 +208,18 @@ actor CodexLogUsageScanner {
                 for file in JSONLScanning.jsonlFiles(under: dir) {
                     let relative = String(file.path.dropFirst(dir.path.count))
                     guard seenRelative.insert(relative).inserted else { continue }
+                    if let identity = FileIdentity(file.path) {
+                        if foreignFiles.contains(identity) {
+                            omittedShared.insert(identity)
+                            continue
+                        }
+                        guard seenFiles.insert(identity).inserted else { continue }
+                    }
                     files.append(file)
                 }
             }
         }
-        return files
+        return (files, omittedShared.count)
     }
 
     /// The session dirs physically inside `home`. A dir that is itself a link points at another home's

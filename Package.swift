@@ -1,5 +1,8 @@
 // swift-tools-version: 6.2
 import PackageDescription
+import Foundation
+
+let accountValidationEnabled = ProcessInfo.processInfo.environment["OPENUSAGE_ACCOUNT_VALIDATION"] == "1"
 
 let package = Package(
     name: "OpenUsage",
@@ -36,7 +39,7 @@ let package = Package(
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
-            ]
+            ] + (accountValidationEnabled ? [.unsafeFlags(["-enable-testing"])] : [])
         ),
         .executableTarget(
             name: "OpenUsageApp",
@@ -70,5 +73,7 @@ let package = Package(
                 .swiftLanguageMode(.v6)
             ]
         )
-    ]
+    ] + (accountValidationEnabled ? [
+        .executableTarget(name: "AccountValidation", dependencies: ["OpenUsage"], path: "Tools/AccountValidation")
+    ] : [])
 )

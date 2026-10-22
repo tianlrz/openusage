@@ -1,4 +1,17 @@
-# OpenUsage
+# OpenUsage — Orca Companion Fork
+
+This is a personal fork of [robinebers/openusage](https://github.com/robinebers/openusage), based on **v0.7.15 (645)**. It adds a macOS companion for viewing Claude and Codex accounts managed by Orca. It is maintained independently and is not an official OpenUsage or Orca release.
+
+- View separate 5-hour and weekly quota readings for saved accounts through the read-only Orca CLI.
+- Keep each account’s original provider-check timestamp; missing readings stay missing.
+- Show the existing daily token and estimated-cost history, excluding imported logs that cannot be assigned safely to an account.
+- Leave authentication, account selection and quota resets with Orca.
+
+**[Fork setup, validation and limitations](docs/orca-companion.md)** · **[Related Orca date-range PR](https://github.com/stablyai/orca/pull/29680)**
+
+The Homebrew and official-download instructions below install upstream OpenUsage, which does not include this fork’s changes. Use the fork setup guide for this version. Official automatic updates can replace a locally installed fork build.
+
+---
 
 Track your AI coding subscriptions from the macOS menu bar — native Swift edition.
 

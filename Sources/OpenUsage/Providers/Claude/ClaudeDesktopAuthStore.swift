@@ -36,6 +36,7 @@ struct ClaudeDesktopSafeStorageKeyReader: ClaudeDesktopSafeStorageKeyReading {
             kSecReturnData as String: true
         ]
         if !allowInteraction {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
             let context = LAContext()
             context.interactionNotAllowed = true
             query[kSecUseAuthenticationContext as String] = context

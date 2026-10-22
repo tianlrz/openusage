@@ -72,7 +72,9 @@ struct CodexHomeScanner: Sendable {
             .sorted()
             .map { "~/.config/\($0)" }
         return Self.uniqueHomes(
-            Self.configuredHomes(environment: environment, homeDirectory: home) + ["~/.config/codex", "~/.codex"] + siblingHomes,
+            Self.configuredHomes(environment: environment, homeDirectory: home) + ["~/.config/codex", "~/.codex"] + siblingHomes
+                + OrcaAccountDiscovery.homes(family: "codex", environment: environment, files: files,
+                                              home: home, listDirectories: listDirectories).values.sorted(),
             homeDirectory: home
         )
     }

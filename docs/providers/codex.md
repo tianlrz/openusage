@@ -148,3 +148,11 @@ continues in the background; a later refresh collects its result. Previously loa
 while waiting. Pending history does not show a premature "No usage data" badge.
 A fresh launch may show quota before history appears. Network and authentication
 failures still use the normal stale-data handling.
+
+## Local Orca account integration
+
+This local build also discovers Orca-managed accounts in its macOS Application Support folder. Each verified user and workspace gets its own existing account card. The integration reads account metadata and reuses Orca CLI quota snapshots; keep Orca running and refresh the account there if its saved usage is old. Restart OpenUsage after adding or removing a saved account. The active Orca profile database takes precedence over legacy JSON and leftover directories, including newer Claude profile homes.
+
+Historical usage keeps event deduplication and account ownership checks. Session files hardlinked across different account homes have no proven payer, so per-account totals exclude them and show a warning. Separate files within an account still count normally; excluding an entire shared archive clears old cached totals rather than retaining duplicated spend. These estimates do not reconstruct past provider quota allowances.
+
+For Orca cards, live limits come from `orca account list --json`, polled on OpenUsage’s existing five-minute refresh cycle with one shared CLI read per minute at most. Each card matches its exact Orca account ID, and Codex also checks its workspace. The active host and inactive-account snapshots are kept separate; a missing or remote-only result is never replaced with the active account's quota. OpenUsage does not read or refresh Orca credentials for these quota requests. The displayed timestamp is when Orca checked the provider, not when OpenUsage read the CLI. Old results show a warning. Historical token/cost rows still come from local logs.
