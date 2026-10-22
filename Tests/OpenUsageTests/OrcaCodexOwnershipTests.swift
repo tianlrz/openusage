@@ -91,7 +91,8 @@ final class OrcaCodexOwnershipTests: XCTestCase {
         let second = root.appendingPathComponent("b/sessions")
         try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
-        let stamp = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
+        let now = Date()
+        let stamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-120))
         let contents = #"{"type":"session_meta","payload":{"id":"\#(a)"}}"# + "\n"
             + #"{"type":"event_msg","timestamp":"\#(stamp)","payload":{"type":"token_count","info":{"model":"gpt-5.2","last_token_usage":{"input_tokens":100,"output_tokens":20}}}}"# + "\n"
         let log = first.appendingPathComponent("rollout-\(a).jsonl")
@@ -100,20 +101,43 @@ final class OrcaCodexOwnershipTests: XCTestCase {
         let context = OrcaCodexHistoryContext(homes: [a: first.deletingLastPathComponent().path,
             b: second.deletingLastPathComponent().path], allHistoryHomes: [
                 first.deletingLastPathComponent().path, second.deletingLastPathComponent().path])
-        let policy = OrcaCodexHistoryAllocation(historicalAccountSlot: b, historicalThrough: Date().timeIntervalSince1970)
+        let policy = OrcaCodexHistoryAllocation(historicalAccountSlot: b,
+            historicalThrough: now.addingTimeInterval(-90).timeIntervalSince1970)
+        var observed = OrcaCodexOwnershipLedger()
+        observed.observe([writer(a, account: a, process: "stable")], at: now.addingTimeInterval(-80))
+        observed.observe([writer(a, account: a, process: "stable")], at: now.addingTimeInterval(-50))
+        try JSONEncoder().encode(observed).write(to: root.appendingPathComponent("ledger.json"))
         let scanner = CodexLogUsageScanner(incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>())
         let store = OrcaCodexHistory(scanner: scanner, reader: NoOwnershipWriters(),
             ledgerURL: root.appendingPathComponent("ledger.json"), allocation: { policy })
         let pricing = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: [
             "gpt-5.2": ModelRates(inputPerMillion: 1, outputPerMillion: 2,
                 cacheWritePerMillion: 1, cacheReadPerMillion: 0.1)]), secondary: PricingCatalog(entries: [:]))
-        let now = Date()
         let owner = await store.scan(accountSlot: b, context: context, now: now, pricing: pricing)
         let other = await store.scan(accountSlot: a, context: context, now: now, pricing: pricing)
         let pending = await store.scan(accountSlot: nil, context: context, now: now, pricing: pricing)
         XCTAssertEqual(owner?.series.daily.reduce(0) { $0 + $1.totalTokens }, 120)
         XCTAssertEqual(other?.series.daily.reduce(0) { $0 + $1.totalTokens }, 0)
         XCTAssertEqual(pending?.series.daily.reduce(0) { $0 + $1.totalTokens }, 0)
+        let nextStamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-60))
+        let appended = #"{"type":"event_msg","timestamp":"\#(nextStamp)","payload":{"type":"token_count","info":{"model":"gpt-5.2","last_token_usage":{"input_tokens":50,"output_tokens":10}}}}"# + "\n"
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(appended.utf8))
+        try handle.close()
+        let updatedA = await store.scan(accountSlot: a, context: context, now: now.addingTimeInterval(6), pricing: pricing)
+        let updatedB = await store.scan(accountSlot: b, context: context, now: now.addingTimeInterval(6), pricing: pricing)
+        let updatedPending = await store.scan(accountSlot: nil, context: context, now: now.addingTimeInterval(6), pricing: pricing)
+        XCTAssertEqual(updatedA?.series.daily.reduce(0) { $0 + $1.totalTokens }, 60)
+        XCTAssertEqual(updatedB?.series.daily.reduce(0) { $0 + $1.totalTokens }, 120)
+        XCTAssertEqual(updatedPending?.series.daily.reduce(0) { $0 + $1.totalTokens }, 0)
+        XCTAssertEqual([updatedA, updatedB, updatedPending].compactMap { $0 }.flatMap(\.series.daily)
+            .reduce(0) { $0 + $1.totalTokens }, 180)
+        try FileManager.default.removeItem(at: log)
+        let aliasedA = await store.scan(accountSlot: a, context: context, now: now.addingTimeInterval(12), pricing: pricing)
+        let aliasedB = await store.scan(accountSlot: b, context: context, now: now.addingTimeInterval(12), pricing: pricing)
+        XCTAssertEqual(aliasedA?.series.daily.reduce(0) { $0 + $1.totalTokens }, 60)
+        XCTAssertEqual(aliasedB?.series.daily.reduce(0) { $0 + $1.totalTokens }, 120)
     }
 
     func testUnassignedUsageNeverExportsAsAnAccountOwnedHistory() {

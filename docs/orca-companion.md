@@ -60,7 +60,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The current macOS ARM64 build passes 22 standalone regression scenarios with 88 assertions, a native release build and deep code-signature verification. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest was unavailable on that machine because only Command Line Tools were installed; it is not reported as having passed.
+The current macOS ARM64 build passes 22 standalone regression scenarios with 94 assertions, a native release build and deep code-signature verification. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest was unavailable on that machine because only Command Line Tools were installed; it is not reported as having passed.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 
