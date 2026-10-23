@@ -147,18 +147,30 @@ final class QuotaAuditTests: XCTestCase {
     }
 
     func testAuditAPIKeepsAccountFiltersAndOriginalReadings() throws {
-        let report = QuotaAuditReport.build(samples: [try sample(10, at: 60)], events: [], now: base.addingTimeInterval(120))
+        var reading = try sample(10, at: 60)
+        reading.sourceAt = base.addingTimeInterval(60.123)
+        let report = QuotaAuditReport.build(samples: [reading], events: [], now: base.addingTimeInterval(120))
         var a = ProviderSnapshot(providerID: "claude", displayName: "A", lines: [])
         a.quotaAudit = report
         var b = ProviderSnapshot(providerID: "claude@12345678", displayName: "B", lines: [])
         b.quotaAudit = report
         let state = LocalUsageAPI.State(enabledOrderedIDs: [a.providerID, b.providerID],
             knownIDs: [a.providerID, b.providerID], snapshots: [a.providerID: a, b.providerID: b])
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            guard let date = OpenUsageISO8601.date(from: value) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO date")
+            }
+            return date
+        }
         let response = LocalUsageAPI.respond(method: "GET", path: "/v1/audit/claude@12345678", state: state)
         let reports = try decoder.decode([String: QuotaAuditReport].self, from: XCTUnwrap(response.body))
         XCTAssertEqual(Set(reports.keys), [b.providerID])
-        XCTAssertEqual(reports[b.providerID]?.windows.first?.readings.first?.sourceAt, base.addingTimeInterval(60))
+        let sourceAt = try XCTUnwrap(reports[b.providerID]?.windows.first?.readings.first?.sourceAt)
+        XCTAssertTrue(abs(sourceAt.timeIntervalSince(reading.sourceAt)) < 0.001)
+        XCTAssertTrue(String(decoding: try XCTUnwrap(response.body), as: UTF8.self).contains(".123Z"))
         XCTAssertEqual(LocalUsageAPI.respond(method: "POST", path: "/v1/audit", state: state).status, 405)
         XCTAssertEqual(LocalUsageAPI.respond(method: "GET", path: "/v1/audit/missing", state: state).status, 404)
         XCTAssertEqual(try JSONDecoder().decode(ProviderSnapshot.self, from: JSONEncoder().encode(a)).quotaAudit, report)

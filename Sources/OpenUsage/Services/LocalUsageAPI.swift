@@ -54,7 +54,10 @@ enum LocalUsageAPI {
                 result[id] = state.snapshots[id]?.quotaAudit
             }
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
+            encoder.dateEncodingStrategy = .custom { date, encoder in
+                var value = encoder.singleValueContainer()
+                try value.encode(OpenUsageISO8601.string(from: date))
+            }
             encoder.outputFormatting = [.sortedKeys]
             do { return Response(status: 200, body: try encoder.encode(reports)) }
             catch { return Self.error(500, "audit_encoding_failed") }
