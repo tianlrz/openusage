@@ -8,6 +8,13 @@ struct CodexMappedUsage: Equatable, Sendable {
 enum CodexUsageMapper {
     static let sessionPeriodMs = MetricPeriod.sessionMs
     static let weeklyPeriodMs = MetricPeriod.weekMs
+    /// Shared row shape for direct and Orca-managed reset-credit readings.
+    static func resetCreditsLine(count: Int, expiries: [Date]) -> MetricLine {
+        .values(label: "Rate Limit Resets",
+                values: [MetricValue(number: Double(count), kind: .count, label: "available")],
+                expiriesAt: expiries)
+    }
+
     /// Codex flex credits are worth 4¢ each; the credits line leads with the dollar value
     /// (mirrors the JS plugin's `CREDIT_USD_RATE`).
     static let creditUSDRate = 0.04
@@ -49,11 +56,7 @@ enum CodexUsageMapper {
         // number); each still-available credit's expiry rides along in `expiriesAt` and surfaces in the
         // row's hover tooltip ("Resets expire in: …").
         if let resets = readResetCredits(body: body, resetCredits: resetCredits) {
-            lines.append(.values(
-                label: "Rate Limit Resets",
-                values: [MetricValue(number: Double(resets.count), kind: .count, label: "available")],
-                expiriesAt: resets.expiries
-            ))
+            lines.append(resetCreditsLine(count: resets.count, expiries: resets.expiries))
         }
 
         if let remaining = readCreditsRemaining(response: response, body: body) {

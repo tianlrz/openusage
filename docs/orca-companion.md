@@ -11,6 +11,8 @@ This personal fork adds a macOS quota dashboard for accounts managed by Orca. It
 
 The app follows its existing five-minute refresh cycle. All account cards share one `accounts.list` RPC with `refreshUsage: true`. This asks Orca to check active and saved accounts without selecting another account. Orca owns any credential renewal. A failed account does not block successful readings for the others. Source timestamps remain the time Orca checked the provider; old results and failed refreshes stay explicit.
 
+Last successful quota percentages, reset times and available Codex reset-credit counts stay in the existing per-account snapshot cache across refresh errors and restarts. An expired login keeps its old reading and reports an error. Renewing that login lets the next scheduled check replace it, including a real zero count. Saved numbers are display evidence, not permission or validation for executing a reset.
+
 The ordinary `orca account list --json` command deliberately requests `refreshUsage: false`, so repeatedly running it cannot freshen an inactive account's quota. Earlier builds of this fork used that cache-only path. The local socket reader fixes that gap without launching another app, storing another OAuth login, switching accounts or consuming quota resets. If Orca reports that an account's login is expired, that account's client must renew it; an expired local auth file cannot make an authenticated usage request by itself.
 
 Orca must be running and expose its local account RPC. OpenUsage reads `orca-runtime.json` under Orca's user-data directory and uses its Unix socket. The reader accepts both current `transports` and legacy `transport` metadata. Set `ORCA_USER_DATA_PATH` in the launching environment to target another local Orca instance. Remote pairing and other hosts' credentials are not read by this macOS integration. Unsupported runtime versions fail explicitly.
@@ -55,7 +57,7 @@ Use full Xcode with Swift 6.2 or newer for the normal build and XCTest suite:
 git clone --branch orca-companion https://github.com/tianlrz/openusage.git
 cd openusage
 swift build -c release
-swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests|QuotaAuditTests|OrcaQuotaRefreshTests'
+swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests|QuotaAuditTests|OrcaQuotaRefreshTests|QuotaSnapshotPersistenceTests'
 ```
 
 There is no signed fork download. For local packaging, first install upstream OpenUsage **0.7.15 (645)** and launch it once. The local installer reuses that app's resources and frameworks, backs up the original app and preferences, inserts the two compiled executables, and applies an ad-hoc signature:
@@ -78,7 +80,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The local macOS ARM64 standalone runner passes 38 account-isolation and quota-audit scenarios with 184 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed. Socket framing, deadline, response-size limits, request/runtime matching, concurrent refresh coalescing and failed-refresh throttling have focused regression coverage.
+The local macOS ARM64 standalone runner passes 40 account-isolation and quota-audit scenarios with 198 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed. Socket framing, deadline, response-size limits, request/runtime matching, concurrent refresh coalescing and failed-refresh throttling have focused regression coverage.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 

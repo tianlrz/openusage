@@ -145,15 +145,36 @@ actor OrcaUsageReader {
         var updatedAt: Double
         var status: String?
         var error: String?
+        var rateLimitResetCredits: ResetCredits? = nil
         var refreshWarning: String? = nil
         var fetchedAt: Date { Date(timeIntervalSince1970: updatedAt / 1000) }
         var lines: [MetricLine] {
-            [session?.line("Session"), weekly?.line("Weekly"), fableWeekly?.line("Fable")].compactMap { $0 }
+            var lines = [session?.line("Session"), weekly?.line("Weekly"), fableWeekly?.line("Fable")].compactMap { $0 }
+            if provider == "codex", let resets = rateLimitResetCredits, resets.availableCount >= 0 {
+                lines.append(CodexUsageMapper.resetCreditsLine(count: resets.availableCount, expiries: resets.expiries))
+            }
+            return lines
         }
         var warning: String? {
             if let refreshWarning { return refreshWarning }
             return Date().timeIntervalSince(fetchedAt) > 15 * 60
                 ? "Orca has not supplied a newer reading for this account. Its saved usage is over 15 minutes old." : nil
+        }
+    }
+    struct ResetCredits: Decodable {
+        var availableCount: Int
+        var nextExpiresAt: Double?
+        var credits: [Credit]?
+
+        var expiries: [Date] {
+            let available = credits?.filter { $0.status == "available" }.compactMap(\.expiresAt) ?? []
+            let timestamps = available.isEmpty ? nextExpiresAt.map { [$0] } ?? [] : available
+            return timestamps.filter { $0.isFinite && $0 > 0 }
+                .map { Date(timeIntervalSince1970: $0 / 1000) }.sorted()
+        }
+        struct Credit: Decodable {
+            var status: String
+            var expiresAt: Double?
         }
     }
 }

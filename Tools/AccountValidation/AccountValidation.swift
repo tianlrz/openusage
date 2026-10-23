@@ -104,6 +104,9 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try refresh.testReplyRequiresMatchingRequestAndRuntimeAndRejectsExcessAccounts()
         try await refresh.testNativeSocketRequestRefreshesWithoutSelectingAnAccount()
         try await refresh.testSocketTimeoutAndOversizedMetadataFailWithoutWaitingIndefinitely()
+        let persistence = QuotaSnapshotPersistenceTests()
+        try persistence.testResetCreditsUseExistingRowAndRejectMissingOrNegativeCounts()
+        try await persistence.testExpiredLoginAndRelaunchKeepResetStateUntilSameAccountRecovers()
         let audit = QuotaAuditTests()
         try await audit.testDistinctAccountsCachedReadingsAndRestart()
         try audit.testWindowsAndTimestampBoundariesNeverBorrowDailyTotals()
@@ -115,7 +118,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try audit.testAuditAPIKeepsAccountFiltersAndOriginalReadings()
         try await audit.testStrictClaudeAuditRejectsSelectedAccountFallbackAndSharesOwnershipRules()
         await audit.testTokenBucketsAndNativePricingAreReused()
-        print("PASS: 38 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        print("PASS: 40 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 
