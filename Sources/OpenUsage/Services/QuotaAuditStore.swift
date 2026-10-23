@@ -15,6 +15,19 @@ actor QuotaAuditStore {
             in: .userDomainMask)[0].appendingPathComponent("OpenUsage/quota-window-audit.json")
     }
 
+    // Price native events on this actor rather than blocking the menu-bar UI during refresh.
+    func recordClaude(slot: String, usage: OrcaUsageReader.Usage,
+                      entries: [ClaudeLogUsageScanner.Entry]?, pricing: ModelPricing, now: Date) -> QuotaAuditReport {
+        record(family: "claude", slot: slot, usage: usage,
+            events: entries?.map { QuotaAuditEvent($0, pricing: pricing) }, now: now)
+    }
+
+    func recordCodex(slot: String, usage: OrcaUsageReader.Usage,
+                     events: [CodexLogUsageScanner.Event]?, pricing: ModelPricing, now: Date) -> QuotaAuditReport {
+        record(family: "codex", slot: slot, usage: usage,
+            events: events?.map { QuotaAuditEvent($0, pricing: pricing) }, now: now)
+    }
+
     func record(family: String, slot: String, usage: OrcaUsageReader.Usage,
                 events: [QuotaAuditEvent]?, now: Date) -> QuotaAuditReport {
         let key = family + ":" + slot

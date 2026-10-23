@@ -205,7 +205,7 @@ final class QuotaAuditTests: XCTestCase {
         XCTAssertNil(otherEntries)
     }
 
-    func testTokenBucketsAndNativePricingAreReused() {
+    func testTokenBucketsAndNativePricingAreReused() async {
         let entry = ClaudeLogUsageScanner.Entry(timestamp: base, tokens: TokenBreakdown(input: 100,
             cacheWrite5m: 200, cacheWrite1h: 300, cacheRead: 400, output: 500), messageID: nil, requestID: nil,
             model: "known")
@@ -222,6 +222,15 @@ final class QuotaAuditTests: XCTestCase {
         XCTAssertEqual(native.tokens.cacheRead, 40)
         XCTAssertEqual(native.totalTokens, 120)
         XCTAssertNil(native.costUSD)
+        let root = scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let store = QuotaAuditStore(url: root.appendingPathComponent("audit.json"))
+        let claudeReport = await store.recordClaude(slot: "fixture", usage: usage(1, at: 120),
+            entries: [entry], pricing: pricing, now: base.addingTimeInterval(120))
+        var codexUsage = usage(1, at: 120); codexUsage.provider = "codex"
+        let codexReport = await store.recordCodex(slot: "fixture", usage: codexUsage,
+            events: [codex], pricing: pricing, now: base.addingTimeInterval(120))
+        XCTAssertEqual(claudeReport.windows.first?.windowUsage.totalTokens, 1500)
+        XCTAssertEqual(codexReport.windows.first?.windowUsage.unpricedEvents, 1)
     }
 
     private func scratch() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("quota-audit-\(UUID())") }

@@ -74,7 +74,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The local macOS ARM64 standalone runner passes 32 account-isolation and quota-audit scenarios with 161 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed.
+The local macOS ARM64 standalone runner passes 32 account-isolation and quota-audit scenarios with 163 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 

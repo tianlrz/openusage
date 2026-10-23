@@ -99,7 +99,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try await audit.testCorruptEvidenceAndConcurrentWriterArePreserved()
         try audit.testAuditAPIKeepsAccountFiltersAndOriginalReadings()
         try await audit.testStrictClaudeAuditRejectsSelectedAccountFallbackAndSharesOwnershipRules()
-        audit.testTokenBucketsAndNativePricingAreReused()
+        await audit.testTokenBucketsAndNativePricingAreReused()
         print("PASS: 32 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
