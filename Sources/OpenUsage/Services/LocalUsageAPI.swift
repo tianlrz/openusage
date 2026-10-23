@@ -46,6 +46,19 @@ enum LocalUsageAPI {
             .map(String.init)
 
         switch (segments.count, segments.first, segments.dropFirst().first) {
+        case (2, "v1", "audit"), (3, "v1", "audit"):
+            guard method == "GET" else { return error(405, "method_not_allowed") }
+            let ids = segments.count == 3 ? state.matchingCardIDs(for: segments[2]) : state.enabledOrderedIDs
+            if segments.count == 3 && ids.isEmpty { return error(404, "provider_not_found") }
+            let reports = ids.reduce(into: [String: QuotaAuditReport]()) { result, id in
+                result[id] = state.snapshots[id]?.quotaAudit
+            }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys]
+            do { return Response(status: 200, body: try encoder.encode(reports)) }
+            catch { return Self.error(500, "audit_encoding_failed") }
+
         case (2, "v1", "limits"):
             guard method == "GET" else { return error(405, "method_not_allowed") }
             return Response(

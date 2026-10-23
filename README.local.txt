@@ -16,6 +16,9 @@ Behavior:
 - Observation gaps remain visible in a separate unassigned-usage section. A chosen historical
   baseline can be assigned manually with --codex-history-owner CARD_ID.
 - Legacy unowned Claude sessions remain unassigned.
+- Five-hour quota audits retain per-account provider readings and captured native-log subtotals for 30 days.
+- Hover or click 5h History in the existing Session row; /v1/audit exports the retained evidence.
+- Stale/missing readings, sampling gaps and unknown prices stay explicit. No extra provider polling.
 - Historical cost is a token-price estimate, not subscription fees or a proven quota allowance.
 
 Validation:

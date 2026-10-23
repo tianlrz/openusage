@@ -7,6 +7,10 @@ extension ClaudeProvider {
             var snapshot = await snapshotWithLocalUsage(
                 mapped: ClaudeMappedUsage(plan: nil, lines: usage.lines), warning: usage.warning)
             snapshot.refreshedAt = usage.fetchedAt
+            let auditPricing = await pricing()
+            let entries = await logUsageScanner.entries(now: now(), strictOwnership: true)
+            snapshot.quotaAudit = await QuotaAuditStore.shared.record(family: "claude", slot: slot,
+                usage: usage, events: entries?.map { QuotaAuditEvent($0, pricing: auditPricing) }, now: now())
             return snapshot
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
@@ -22,6 +26,12 @@ extension CodexProvider {
             var snapshot = await snapshot(mapped: CodexMappedUsage(plan: nil, lines: usage.lines))
             snapshot.refreshedAt = usage.fetchedAt
             snapshot.warning = [usage.warning, snapshot.warning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            if let context = orcaHistoryContext {
+                let auditPricing = await pricing()
+                let events = await OrcaCodexHistory.shared.events(accountSlot: slot, context: context, now: now())
+                snapshot.quotaAudit = await QuotaAuditStore.shared.record(family: "codex", slot: slot,
+                    usage: usage, events: events?.map { QuotaAuditEvent($0, pricing: auditPricing) }, now: now())
+            }
             return snapshot
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)

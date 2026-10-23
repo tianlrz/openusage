@@ -27,6 +27,10 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
 }
 @main enum AccountValidation {
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--audit-render") {
+            try QuotaAuditRendering.render()
+            return
+        }
         if CommandLine.arguments.contains("--local-discovery") {
             let suite = "OpenUsageLocalDiscovery.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
@@ -85,7 +89,18 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         ownership.testSessionIdentitySurvivesIncrementalParserBatches()
         try await ownership.testSharedFileIsCountedOnceAndHistoricalOwnerReceivesTheWholeBaseline()
         ownership.testUnassignedUsageNeverExportsAsAnAccountOwnedHistory()
-        print("PASS: 22 account-isolation regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        let audit = QuotaAuditTests()
+        try await audit.testDistinctAccountsCachedReadingsAndRestart()
+        try audit.testWindowsAndTimestampBoundariesNeverBorrowDailyTotals()
+        try audit.testEarlyResetDoesNotCountOverlappingEventsTwice()
+        try audit.testMillisecondResetNoiseKeepsOneWindowAndRawEvidence()
+        try audit.testUnknownPricesGapsAndCorrectionsPreventMisleadingComparisons()
+        try await audit.testMissingInvalidFutureAndReplayedSamplesDoNotInventReadings()
+        try await audit.testCorruptEvidenceAndConcurrentWriterArePreserved()
+        try audit.testAuditAPIKeepsAccountFiltersAndOriginalReadings()
+        try await audit.testStrictClaudeAuditRejectsSelectedAccountFallbackAndSharesOwnershipRules()
+        audit.testTokenBucketsAndNativePricingAreReused()
+        print("PASS: 32 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 

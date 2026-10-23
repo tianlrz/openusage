@@ -4,6 +4,7 @@ This is a personal fork of [robinebers/openusage](https://github.com/robinebers/
 
 - View separate 5-hour and weekly quota readings for saved accounts through the read-only Orca CLI.
 - Keep each account’s original provider-check timestamp; missing readings stay missing.
+- Audit five-hour windows per account, with original quota samples, captured token/cache/cost estimates and 30-day local retention.
 - Keep shared logs, deduplicate consumption once, and split new token/cost history by observed session writers. Unverified ownership remains visible in a separate history section.
 - Leave authentication, account selection and quota resets with Orca.
 

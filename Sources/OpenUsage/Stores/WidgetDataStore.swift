@@ -570,6 +570,9 @@ final class WidgetDataStore {
         // Single global choke point: dashboard/share rows and menu-bar values all funnel through here,
         // so stamping the mode once makes them follow the global setting. Inert for unbounded rows
         // (limit == nil), whose displayed value ignores displayMode.
+        if descriptor.metricLabel == "Session" {
+            result.quotaAudit = snapshots[descriptor.providerID]?.quotaAudit
+        }
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing

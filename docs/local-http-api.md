@@ -49,6 +49,12 @@ Works for disabled providers too.
 > provider had no snapshot. It now always returns an array, so the shape stays identical whether an
 > ID names one provider or a whole account family.
 
+### `GET /v1/audit` and `GET /v1/audit/:id` (Orca companion fork)
+
+Returns a JSON object keyed by account card ID, containing local five-hour audit reports. Collection responses include enabled providers; the ID route uses the same exact-card/family matching as `/v1/limits/:id`. Cards with no audit report are omitted. Unknown IDs return 404 and unsupported methods return 405. The original usage and limits formats are unchanged.
+
+Each report includes `generatedAt`, `latestSourceAt`, `windows` and coverage `notes`. Windows contain the provider reset time, effective window boundaries, first/last reading times and percentages, token/cost subtotals for the whole local window and the interval between readings, model token counts, sampling notes and the original `readings`. Each reading retains its original `sourceAt`, local `observedAt`, session percentage/reset/duration, optional weekly data, and a `localUsage` subtotal captured through the source time when attributable logs were available. Dates use ISO-8601; durations use seconds; costs are API-rate estimates in USD. Unknown-price tokens are retained with an `unpricedEvents` count. Reports remain local even when iCloud is enabled. See [the audit limitations](orca-companion.md#five-hour-window-audit) before comparing allowances.
+
 ### Everything else
 
 Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**. When the server is already handling its maximum of 16 concurrent connections, requests get **503** — back off and retry.

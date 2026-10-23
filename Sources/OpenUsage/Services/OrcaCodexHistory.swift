@@ -36,6 +36,12 @@ actor OrcaCodexHistory {
 
     func scan(accountSlot: String?, context: OrcaCodexHistoryContext, now: Date,
               pricing: ModelPricing, fallbackModel: String? = nil) async -> LogUsageScan? {
+        guard let events = await events(accountSlot: accountSlot, context: context, now: now) else { return nil }
+        return CodexLogUsageScanner.aggregate(events: events,
+            since: JSONLScanning.sinceDate(daysBack: 30, now: now), pricing: pricing, fallbackModel: fallbackModel)
+    }
+
+    func events(accountSlot: String?, context: OrcaCodexHistoryContext, now: Date) async -> [CodexLogUsageScanner.Event]? {
         if self.context == nil {
             self.context = context
             captureWriters()
@@ -67,8 +73,7 @@ actor OrcaCodexHistory {
         for key in Array(partitions.keys) where key != "unassigned" && context.homes[key] == nil {
             partitions["unassigned", default: []] += partitions.removeValue(forKey: key) ?? []
         }
-        return CodexLogUsageScanner.aggregate(events: partitions[accountSlot ?? "unassigned"] ?? [],
-            since: JSONLScanning.sinceDate(daysBack: 30, now: now), pricing: pricing, fallbackModel: fallbackModel)
+        return partitions[accountSlot ?? "unassigned"] ?? []
     }
 
     func warning(accountSlot: String?) -> String? {

@@ -15,6 +15,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// only on error snapshots): the refresh succeeded and partial data (spend tiles) still loads, so this
     /// surfaces as the provider header's amber triangle rather than blanking the provider. Cached with the
     /// snapshot; cleared on the next refresh when the condition resolves.
+    var quotaAudit: QuotaAuditReport? = nil
     var warning: String?
     /// Set only on error snapshots: a stable, non-PII bucket for the failure, read by telemetry on the
     /// failure path. Always `nil` on success (and error snapshots aren't cached), so it never persists.

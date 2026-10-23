@@ -46,6 +46,7 @@ struct WidgetData: Hashable {
     /// Period-scoped model spend/tokens for the Today / Yesterday / Last 30 Days hover popover. Nil for
     /// non-spend rows and for periods where the provider has no model-level data.
     var modelBreakdown: ModelUsageBreakdown?
+    var quotaAudit: QuotaAuditReport? = nil
     var periodDurationMs: Int?
     var valueTextOverride: String?
     var subtitleOverride: String?

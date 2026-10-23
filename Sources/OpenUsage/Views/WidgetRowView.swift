@@ -122,6 +122,7 @@ struct WidgetRowView: View {
                 .font(labelFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+            if let report = data.quotaAudit { QuotaAuditControl(report: report) }
             warning(state)
         }
     }

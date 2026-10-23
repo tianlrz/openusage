@@ -27,7 +27,21 @@ Events outside verified intervals, from conflicting writers, after observation f
 
 For a user-directed historical baseline, install with `--codex-history-owner CARD_ID`. All existing log events through installation time are then assigned to that Orca account, with a visible manual-allocation notice. Future events continue to use observed writers. This is an explicit bookkeeping choice, not recovered proof of the historical payer. No source logs are changed. Older Claude sessions without a proven owner remain unassigned.
 
-Some oversized log records may be skipped by the existing parsers. The result is an estimate over readable logs with observed or explicitly chosen ownership, not a complete provider billing ledger. Account-by-day filtering and five-hour historical allowance audits remain follow-up work; this fork does not establish whether a provider reduced an account's allowance.
+Some oversized log records may be skipped by the existing parsers. The result is an estimate over readable logs with observed or explicitly chosen ownership, not a complete provider billing ledger. Account-by-day filtering remains follow-up work. Five-hour audit collection starts when this build runs; it does not establish whether a provider reduced an account's allowance.
+
+## Five-hour window audit
+
+Hover or click **5h History** beside an account's existing Session label. Choose from its latest 24 observed windows. No extra login card or metric is added. Claude and Codex use the same collector with independent Orca account IDs; selecting another account does not move earlier samples.
+
+Each window retains the provider's original percentage and timestamp, the time this Mac received it, a captured local token/cost subtotal through that source time, and the accompanying weekly reading when available. Captured subtotals remain in the original evidence even if logs or model prices later change; the detail also recomputes current log subtotals. Subsecond reset-time noise is grouped into the same second while each raw reading retains its original precision. Re-reading the same Orca cache does not create another sample. Windows follow the provider's actual five-hour reset time, rather than local clock blocks. An early reset shortens the previous window so overlapping logs are not counted twice. The app retains 30 days of collected readings, including across restarts. There is no reconstruction of pre-installation percentages.
+
+The detail separates local usage within the window from usage **between the first and last provider readings**. Both show input, output, cache-read and cache-write tokens and an API-price estimate. Models are listed separately. Unknown prices do not hide tokens: the displayed dollar subtotal is marked partial. A cost-per-10-percentage-points figure is available only with at least two readings, a change of at least 10 points, known prices and no observed sampling problems. This is an observed local comparison, not a measured subscription allowance or evidence of account penalties.
+
+Claude audit events require recorded session account/organization ownership or an account-specific Desktop session index. They never inherit ownership merely from the currently selected login. Codex reuses the existing continuously observed session-writer ledger and the user-directed historical allocation. Unassigned Codex events remain outside account audits. Background sessions present in the attributed native logs are included; usage on the web, in other tools, on remote hosts or other devices may be missing. Effort settings are not inferred from these token records. Model, cache and service-tier differences still matter when comparing windows.
+
+Late starts, stale readings, gaps over 10 minutes, percentage decreases and missing prices are called out. Missing or non-five-hour reset information leaves the audit waiting rather than inventing a window. This collector follows the existing five-minute refresh, makes no additional provider requests and does not force-refresh Orca's account cache.
+
+Raw local readings are saved privately at `~/Library/Application Support/OpenUsage/quota-window-audit.json` (mode 600). A file lock serializes app/CLI saves. Unreadable evidence is preserved and reported rather than replaced. The audit stays local and is not part of iCloud history export. The existing loopback API exposes reports and their underlying samples at `/v1/audit`, `/v1/audit/claude`, `/v1/audit/codex` or `/v1/audit/CARD_ID`, using ISO-8601 dates. The API includes all retained windows, while the popover shows the newest 24.
 
 ## Build and install
 
@@ -37,7 +51,7 @@ Use full Xcode with Swift 6.2 or newer for the normal build and XCTest suite:
 git clone --branch orca-companion https://github.com/tianlrz/openusage.git
 cd openusage
 swift build -c release
-swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests'
+swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests|QuotaAuditTests'
 ```
 
 There is no signed fork download. For local packaging, first install upstream OpenUsage **0.7.15 (645)** and launch it once. The local installer reuses that app's resources and frameworks, backs up the original app and preferences, inserts the two compiled executables, and applies an ad-hoc signature:
@@ -60,7 +74,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The current macOS ARM64 build passes 22 standalone regression scenarios with 94 assertions, a native release build and deep code-signature verification. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest was unavailable on that machine because only Command Line Tools were installed; it is not reported as having passed.
+The local macOS ARM64 standalone runner passes 32 account-isolation and quota-audit scenarios with 160 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 

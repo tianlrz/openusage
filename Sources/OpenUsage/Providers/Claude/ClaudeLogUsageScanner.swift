@@ -103,9 +103,16 @@ actor ClaudeLogUsageScanner {
     /// no log files exist (the spend tiles then render "No data"); returns an empty series when logs
     /// exist but have no usage in the window.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        guard let entries = await entries(daysBack: daysBack, now: now) else { return nil }
+        return Self.aggregate(entries: entries, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now), pricing: pricing)
+    }
+
+    /// Audit reads require recorded session ownership, never the login selected at scan time.
+    func entries(daysBack: Int = 30, now: Date = Date(), strictOwnership: Bool = false) async -> [Entry]? {
         // A UUID-only login cannot claim any organization's history once multiple identities are
         // known; while it is the default login it still claims the default home's unattributed sessions.
-        let claimsDefaultHome = !allowsUnattributedSessions && isCurrentDefaultLogin()
+        if strictOwnership && organizationID == nil { return nil }
+        let claimsDefaultHome = !strictOwnership && !allowsUnattributedSessions && isCurrentDefaultLogin()
         if accountID != nil, organizationID == nil, !allowsUnattributedSessions, !claimsDefaultHome {
             AppLog.info(LogTag.plugin("claude"), "local spending excluded: login has no organization and multiple accounts are known")
             return nil
@@ -122,7 +129,7 @@ actor ClaudeLogUsageScanner {
 
         var files = Self.usageFiles(under: roots)
         if organizationID != nil || claimsDefaultHome {
-            files = ownedUsageFiles(files, claimsDefaultHome: claimsDefaultHome)
+            files = ownedUsageFiles(files, claimsDefaultHome: claimsDefaultHome, strictOwnership: strictOwnership)
         }
         guard !Task.isCancelled else { return nil }
         guard !files.isEmpty else {
@@ -139,7 +146,7 @@ actor ClaudeLogUsageScanner {
             cacheIdentity: cacheIdentity,
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
+        return Self.dedup(entries)
     }
 
     /// Stable source configuration identity rather than the discovered root list: Cowork adds session
@@ -283,7 +290,8 @@ actor ClaudeLogUsageScanner {
     /// inherit their parent session's ownership. Keep this outside the shared parsed-entry cache.
     private func ownedUsageFiles(
         _ files: [JSONLScanning.DiscoveredFile],
-        claimsDefaultHome: Bool
+        claimsDefaultHome: Bool,
+        strictOwnership: Bool = false
     ) -> [JSONLScanning.DiscoveredFile] {
         let coworkPrefix = homeDirectory()
             .appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions")
@@ -325,7 +333,7 @@ actor ClaudeLogUsageScanner {
                 if owner == organizationID, accountID == nil || ownerAccount == accountID {
                     ownedFiles.append(file)
                 }
-            } else if allowsUnattributedSessions {
+            } else if allowsUnattributedSessions && !strictOwnership {
                 ownedFiles.append(file)
             } else {
                 let sessionID = URL(fileURLWithPath: sessionFile.path)
