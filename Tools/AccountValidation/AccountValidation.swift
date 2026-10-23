@@ -27,6 +27,14 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
 }
 @main enum AccountValidation {
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--owner-quota-probe") {
+            try await ManagedQuotaProbe.ownerRefresh()
+            return
+        }
+        if CommandLine.arguments.contains("--live-quota-probe") {
+            try await ManagedQuotaProbe.run()
+            return
+        }
         if CommandLine.arguments.contains("--audit-render") {
             try QuotaAuditRendering.render()
             return
@@ -89,6 +97,13 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         ownership.testSessionIdentitySurvivesIncrementalParserBatches()
         try await ownership.testSharedFileIsCountedOnceAndHistoricalOwnerReceivesTheWholeBaseline()
         ownership.testUnassignedUsageNeverExportsAsAnAccountOwnedHistory()
+        let refresh = OrcaQuotaRefreshTests()
+        try await refresh.testConcurrentCardsShareOneRefreshAndKeepAccountIsolation()
+        try await refresh.testRefreshIntervalFailuresAndStaleFallbackKeepOriginalTimestamp()
+        try refresh.testFramesHandleKeepalivesSplitRepliesAndBoundedMemory()
+        try refresh.testReplyRequiresMatchingRequestAndRuntimeAndRejectsExcessAccounts()
+        try await refresh.testNativeSocketRequestRefreshesWithoutSelectingAnAccount()
+        try await refresh.testSocketTimeoutAndOversizedMetadataFailWithoutWaitingIndefinitely()
         let audit = QuotaAuditTests()
         try await audit.testDistinctAccountsCachedReadingsAndRestart()
         try audit.testWindowsAndTimestampBoundariesNeverBorrowDailyTotals()
@@ -100,7 +115,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try audit.testAuditAPIKeepsAccountFiltersAndOriginalReadings()
         try await audit.testStrictClaudeAuditRejectsSelectedAccountFallbackAndSharesOwnershipRules()
         await audit.testTokenBucketsAndNativePricingAreReused()
-        print("PASS: 32 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        print("PASS: 38 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 

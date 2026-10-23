@@ -8,8 +8,10 @@ Behavior:
 - Reuses OpenUsage's existing per-account cards and usage clients.
 - Reads the active Orca profile registry; migrated SQLite state overrides stale JSON/directories.
 - Supports legacy managed Claude auth and newer Claude profile homes, plus managed Codex homes.
-- Live limits use read-only orca account list --json, matched by account/workspace IDs.
-- One CLI read per minute at most, on the existing five-minute app refresh cycle; no new background daemon.
+- Live limits use Orca's accounts.list RPC with refreshUsage enabled, matched by account/workspace IDs.
+- All cards share one refresh per five minutes; no new daemon or repeated CLI launches.
+- Only one request may be in flight; metadata is capped at 64 KiB and the reply at 512 KiB.
+- Orca owns credential renewal. A truly expired account is reported independently of the others.
 - Orca timestamps are preserved and old results marked; no direct login is needed for these cards.
 - Deleted OpenUsage accounts remain removed. Restart OpenUsage after source account changes.
 - Shared Codex hardlinks are read once; new usage follows continuously observed local session writers.

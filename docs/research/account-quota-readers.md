@@ -1,0 +1,12 @@
+# Account quota readers
+
+Checked on 2026-10-23. These tools provide ways to query or switch logins; they do not establish that switching accounts changes a subscription's allowance.
+
+- [CC Switch subscription reader](https://github.com/farion1231/cc-switch/blob/e85ade714ad6208c79d85f915036ed61b38658fc/src-tauri/src/services/subscription.rs) reads Claude OAuth credentials and calls `GET /api/oauth/usage`. Its credentials can be expired even while a saved quota remains visible. Snapshot inspected: `e85ade714ad6208c79d85f915036ed61b38658fc`.
+- [claude-swap](https://github.com/realiti4/claude-swap/blob/042a36b673d51f4bf990b04f903aee02f1ab07e1/README.md) documents per-account 5h/7d readings, session-specific credentials, controlled polling and leaving active-session credential renewal to Claude. It also warns that the first message after an account change may spend extra usage rebuilding the conversation cache. Snapshot inspected: `042a36b673d51f4bf990b04f903aee02f1ab07e1`.
+- [claude-swap issue #217](https://github.com/realiti4/claude-swap/issues/217) reports a concrete account-attribution bug: a session-profile card displayed the default login's quota. This is an implementation report, not evidence of provider-side account penalties.
+- [Anthropic prompt-cache documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) says caches are never shared across organizations. Applying this to a subscription-account switch is a plausible explanation for rebuilding costs, not proof of the consumer product's exact quota formula.
+
+Live checks on the development machine found that direct GET requests worked for both Codex logins while the then-saved Claude access tokens were rejected with HTTP 401. Orca's existing owner-managed `accounts.list` refresh returned fresh readings for one Claude and both Codex accounts without switching the selected accounts; the remaining Claude login was reported expired. Personal identities and credentials from those checks are deliberately excluded here.
+
+The fork therefore reuses Orca's owner-managed refresh rather than creating another OAuth renewal loop. The five-hour audit retains percentages, original sample times, local token/cache counts and API-price estimates, which can support comparisons after several new windows. Changes in model, cache use, context, other clients and sampling coverage must still be considered before attributing a difference to a lower server-side allowance.

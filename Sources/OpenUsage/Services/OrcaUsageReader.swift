@@ -1,30 +1,74 @@
 import Foundation
 
-/// Reuses Orca's cached quota snapshots; never reads a login or asks a provider to refresh one.
+/// Coalesces all cards into one owner-managed refresh every five minutes; no provider login is copied.
 actor OrcaUsageReader {
-    static let shared = OrcaUsageReader()
+    static let shared = OrcaUsageReader(refresh: {
+        try await Task.detached(priority: .utility) { try OrcaQuotaSocket().refresh() }.value
+    })
     private let runner: ProcessRunning
     private let executable: String
+    private let refresh: (@Sendable () async throws -> Payload)?
+    private let now: @Sendable () -> Date
+    private var lastRefreshError: ReadError?
+    private var inFlight: Task<Payload, Error>?
+    private var refreshWarning: String?
     private var cached: Payload?
     private var checkedAt = Date.distantPast
 
-    init(runner: ProcessRunning = SystemProcessRunner(), executable: String? = nil) {
+    init(runner: ProcessRunning = SystemProcessRunner(), executable: String? = nil,
+         refresh: (@Sendable () async throws -> Payload)? = nil,
+         now: @escaping @Sendable () -> Date = Date.init) {
+        self.refresh = refresh
+        self.now = now
         self.runner = runner
         self.executable = executable ?? ProcessInfo.processInfo.environment["ORCA_CLI_COMMAND"] ?? "/usr/local/bin/orca"
     }
 
-    func usage(family: String, slot: String, workspace: String? = nil) throws -> Usage {
-        if cached == nil || Date().timeIntervalSince(checkedAt) >= 60 {
-            let reply = try runner.run(executable: executable, arguments: ["account", "list", "--json"],
-                                       environment: [:], timeout: 15)
-            guard reply.succeeded else { throw ReadError("Orca CLI could not read usage. Keep Orca running and retry.") }
-            let envelope = try JSONDecoder().decode(Envelope.self, from: Data(reply.stdout.utf8))
-            guard envelope.ok else { throw ReadError("Orca CLI could not read the current accounts.") }
-            cached = envelope.result
-            checkedAt = Date()
+    func usage(family: String, slot: String, workspace: String? = nil) async throws -> Usage {
+        let payload = try await snapshot()
+        var result = try payload.usage(family: family, slot: slot, workspace: workspace)
+        result.refreshWarning = refreshWarning
+        return result
+    }
+
+    func snapshot() async throws -> Payload {
+        let interval: TimeInterval = refresh == nil ? 60 : 300
+        if cached == nil, let lastRefreshError, now().timeIntervalSince(checkedAt) < interval {
+            throw lastRefreshError
+        }
+        if cached == nil || now().timeIntervalSince(checkedAt) >= interval {
+            if inFlight == nil {
+                let runner = self.runner, executable = self.executable, refresh = self.refresh
+                inFlight = Task {
+                    if let refresh { return try await refresh() }
+                    let reply = try runner.run(executable: executable, arguments: ["account", "list", "--json"],
+                                               environment: [:], timeout: 15)
+                    guard reply.succeeded, reply.stdout.utf8.count <= OrcaQuotaSocket.maximumFrameBytes else {
+                        throw ReadError("Orca CLI could not read usage. Keep Orca running and retry.")
+                    }
+                    let envelope = try JSONDecoder().decode(Envelope.self, from: Data(reply.stdout.utf8))
+                    guard envelope.ok else { throw ReadError("Orca CLI could not read the current accounts.") }
+                    return envelope.result
+                }
+            }
+            do {
+                guard let task = inFlight else { throw ReadError("Orca usage is unavailable.") }
+                let result = try await task.value
+                cached = result
+                checkedAt = now()
+                refreshWarning = nil
+                lastRefreshError = nil
+                inFlight = nil
+            } catch {
+                inFlight = nil
+                checkedAt = now()
+                lastRefreshError = ReadError("Orca's live quota refresh failed. Keep Orca running; automatic retry follows the five-minute interval.")
+                refreshWarning = "Live quota refresh failed; these are saved readings with their original timestamps."
+                guard cached != nil else { throw lastRefreshError ?? ReadError("Orca usage is unavailable.") }
+            }
         }
         guard let payload = cached else { throw ReadError("Orca usage is unavailable.") }
-        return try payload.usage(family: family, slot: slot, workspace: workspace)
+        return payload
     }
 
     struct ReadError: LocalizedError {
@@ -53,7 +97,7 @@ actor OrcaUsageReader {
                 limits = inactive?.first(where: { $0.accountId == slot })?.rateLimits
             }
             guard let limits, limits.provider == family else {
-                throw ReadError("Orca has not loaded usage for this account yet. Refresh it in Orca, then retry here.")
+                throw ReadError("Orca has no current quota reading for this saved account. Check its login in Orca.")
             }
             guard limits.status == "ok", limits.error == nil else {
                 throw ReadError("Orca could not load this account's usage: " + (limits.error ?? limits.status ?? "unavailable"))
@@ -101,13 +145,15 @@ actor OrcaUsageReader {
         var updatedAt: Double
         var status: String?
         var error: String?
+        var refreshWarning: String? = nil
         var fetchedAt: Date { Date(timeIntervalSince1970: updatedAt / 1000) }
         var lines: [MetricLine] {
             [session?.line("Session"), weekly?.line("Weekly"), fableWeekly?.line("Fable")].compactMap { $0 }
         }
         var warning: String? {
-            Date().timeIntervalSince(fetchedAt) > 15 * 60
-                ? "Orca's saved usage is over 15 minutes old. Refresh this account in Orca for a newer reading." : nil
+            if let refreshWarning { return refreshWarning }
+            return Date().timeIntervalSince(fetchedAt) > 15 * 60
+                ? "Orca has not supplied a newer reading for this account. Its saved usage is over 15 minutes old." : nil
         }
     }
 }

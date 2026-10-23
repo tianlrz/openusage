@@ -2,7 +2,7 @@
 
 This is a personal fork of [robinebers/openusage](https://github.com/robinebers/openusage), based on **v0.7.15 (645)**. It adds a macOS companion for viewing Claude and Codex accounts managed by Orca. It is maintained independently and is not an official OpenUsage or Orca release.
 
-- View separate 5-hour and weekly quota readings for saved accounts through the read-only Orca CLI.
+- View separate 5-hour and weekly quota readings for saved accounts through Orca's local quota service, without switching accounts.
 - Keep each account’s original provider-check timestamp; missing readings stay missing.
 - Audit five-hour windows per account, with original quota samples, captured token/cache/cost estimates and 30-day local retention.
 - Keep shared logs, deduplicate consumption once, and split new token/cost history by observed session writers. Unverified ownership remains visible in a separate history section.

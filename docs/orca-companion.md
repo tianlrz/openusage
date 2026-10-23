@@ -5,13 +5,17 @@ This personal fork adds a macOS quota dashboard for accounts managed by Orca. It
 ## What works
 
 - Separate Claude and Codex account cards, including inactive accounts.
-- Five-hour and weekly quota percentages and reset times supplied by `orca account list --json`.
+- Five-hour and weekly quota percentages and reset times supplied by Orca's local account service.
 - The existing Today, Yesterday and Last 30 Days token and estimated-cost rows, plus the daily history chart, where logs can be attributed to an account.
 - Exact Orca account-ID matching, with a workspace check for Codex. A missing account reading never borrows another account's quota.
 
-The app follows its existing five-minute refresh cycle. The cards share a CLI result for up to one minute. Quota timestamps show when Orca checked the provider, and older results display a warning. Reading the CLI does not force Orca to refresh its provider cache.
+The app follows its existing five-minute refresh cycle. All account cards share one `accounts.list` RPC with `refreshUsage: true`. This asks Orca to check active and saved accounts without selecting another account. Orca owns any credential renewal. A failed account does not block successful readings for the others. Source timestamps remain the time Orca checked the provider; old results and failed refreshes stay explicit.
 
-Orca remains responsible for login, token renewal, account selection and resets. These account cards do not make separate provider OAuth requests for quota. Orca must be running, its CLI must be installed, and its `account list --json` response must include Claude/Codex accounts and rate limits. Older CLI versions without these fields are unsupported. Set `ORCA_CLI_COMMAND` to an absolute executable path if Orca is installed somewhere other than `/usr/local/bin/orca`; the variable must be available to the process launching OpenUsage.
+The ordinary `orca account list --json` command deliberately requests `refreshUsage: false`, so repeatedly running it cannot freshen an inactive account's quota. Earlier builds of this fork used that cache-only path. The local socket reader fixes that gap without launching another app, storing another OAuth login, switching accounts or consuming quota resets. If Orca reports that an account's login is expired, that account's client must renew it; an expired local auth file cannot make an authenticated usage request by itself.
+
+Orca must be running and expose its local account RPC. OpenUsage reads `orca-runtime.json` under Orca's user-data directory and uses its Unix socket. The reader accepts both current `transports` and legacy `transport` metadata. Set `ORCA_USER_DATA_PATH` in the launching environment to target another local Orca instance. Remote pairing and other hosts' credentials are not read by this macOS integration. Unsupported runtime versions fail explicitly.
+
+The collector keeps one normalized account snapshot and one in-flight task, shared across all cards. It has no per-request history, no OAuth-token cache and no extra history-log scan. Runtime metadata is limited to 64 KiB, outbound requests to 16 KiB, total reply frames to 512 KiB and account arrays to 64 entries per provider. Socket operations have a 30-second deadline and close on every exit. Failed refreshes also wait for the next five-minute interval, including manual refreshes, so a failing server cannot cause repeated queued requests. These bounds apply to quota collection; the existing UI and historical-log caches also use memory. A standalone live quota-reader check measured 13,728 KiB RSS after warm-up and 13,824 KiB after 400 cached account reads. This measures the new collector only, not the full app or a long-duration leak test.
 
 Account discovery reads the active local Orca profile. Its SQLite state takes precedence over old JSON and leftover account directories. Both legacy Claude managed-auth directories and newer Claude profile homes are supported. Restart OpenUsage after account changes. Removing an OpenUsage card does not delete the account from Orca.
 
@@ -39,7 +43,7 @@ The detail separates local usage within the window from usage **between the firs
 
 Claude audit events require recorded session account/organization ownership or an account-specific Desktop session index. They never inherit ownership merely from the currently selected login. Codex reuses the existing continuously observed session-writer ledger and the user-directed historical allocation. Unassigned Codex events remain outside account audits. Background sessions present in the attributed native logs are included; usage on the web, in other tools, on remote hosts or other devices may be missing. Effort settings are not inferred from these token records. Model, cache and service-tier differences still matter when comparing windows.
 
-Late starts, stale readings, gaps over 10 minutes, percentage decreases and missing prices are called out. Missing or non-five-hour reset information leaves the audit waiting rather than inventing a window. This collector follows the existing five-minute refresh, makes no additional provider requests and does not force-refresh Orca's account cache.
+Late starts, stale readings, gaps over 10 minutes, percentage decreases and missing prices are called out. Missing or non-five-hour reset information leaves the audit waiting rather than inventing a window. This collector follows the existing five-minute refresh and shares its quota request with all cards. Orca refreshes its provider readings; OpenUsage makes no independent provider OAuth request.
 
 Raw local readings are saved privately at `~/Library/Application Support/OpenUsage/quota-window-audit.json` (mode 600). A file lock serializes app/CLI saves. Unreadable evidence is preserved and reported rather than replaced. The audit stays local and is not part of iCloud history export. The existing loopback API exposes reports and their underlying samples at `/v1/audit`, `/v1/audit/claude`, `/v1/audit/codex` or `/v1/audit/CARD_ID`, using ISO-8601 dates. The API includes all retained windows, while the popover shows the newest 24.
 
@@ -51,7 +55,7 @@ Use full Xcode with Swift 6.2 or newer for the normal build and XCTest suite:
 git clone --branch orca-companion https://github.com/tianlrz/openusage.git
 cd openusage
 swift build -c release
-swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests|QuotaAuditTests'
+swift test --filter 'OrcaAccountDiscoveryTests|OrcaAccountHistoryTests|OrcaUsageReaderTests|OrcaCodexOwnershipTests|QuotaAuditTests|OrcaQuotaRefreshTests'
 ```
 
 There is no signed fork download. For local packaging, first install upstream OpenUsage **0.7.15 (645)** and launch it once. The local installer reuses that app's resources and frameworks, backs up the original app and preferences, inserts the two compiled executables, and applies an ad-hoc signature:
@@ -74,7 +78,7 @@ The script refuses to replace a different installed version. It does not change 
 
 ## Validation
 
-The local macOS ARM64 standalone runner passes 32 account-isolation and quota-audit scenarios with 163 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed.
+The local macOS ARM64 standalone runner passes 38 account-isolation and quota-audit scenarios with 184 assertions. Release builds and deep code-signature verification are also checked. The audit's populated and waiting states were rendered in hidden native hosting views; no test window was shown. Four account cards were checked against Orca CLI quota results. No real emails, credentials or account IDs from that check are included in this repository. Full XCTest requires Xcode and runs in the fork's macOS GitHub CI; the standalone runner is used locally because only Command Line Tools are installed. Socket framing, deadline, response-size limits, request/runtime matching, concurrent refresh coalescing and failed-refresh throttling have focused regression coverage.
 
 A standalone runner imports the production module for machines without XCTest. Enable it explicitly when building; ordinary production builds do not enable test-only access:
 
