@@ -7,6 +7,8 @@ extension ClaudeProvider {
             var snapshot = await snapshotWithLocalUsage(
                 mapped: ClaudeMappedUsage(plan: nil, lines: usage.lines), warning: usage.warning)
             snapshot.refreshedAt = usage.fetchedAt
+            let ownershipWarning = await logUsageScanner.ownershipWarning
+            snapshot.warning = [snapshot.warning, ownershipWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
             let auditPricing = await pricing()
             let entries = await logUsageScanner.entries(now: now(), strictOwnership: true)
             snapshot.quotaAudit = await QuotaAuditStore.shared.recordClaude(slot: slot,

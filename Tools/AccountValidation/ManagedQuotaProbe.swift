@@ -58,6 +58,29 @@ enum ManagedQuotaProbe {
         }
     }
 
+    static func claudeHistory() async throws {
+        KeychainAccessGuard.holdPopups()
+        let suite = "OpenUsageClaudeHistoryProbe.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        if let records = UserDefaults(suiteName: "com.robinebers.openusage")?.data(forKey: "openusage.providerAccounts.v1") {
+            defaults.set(records, forKey: "openusage.providerAccounts.v1")
+        }
+        let assembly = await ProviderAccountAssembly.make(observer: DefaultAccountObserver(keychain: FakeKeychain()),
+            accountsStore: ProviderAccountsStore(defaults: defaults), desktop: ClaudeDesktopAuthStore(keyReader: ProbeDesktopKey()))
+        let providers = ProviderCatalog.make(defaults: defaults, claudeCards: assembly.claudeCards,
+            codex: assembly.codex, claudeIdentityKeys: assembly.identityKeysByCard)
+        for provider in providers {
+            guard let claude = provider as? ClaudeProvider else { continue }
+            let entries = await claude.logUsageScanner.entries(strictOwnership: true) ?? []
+            let today = Calendar.current.startOfDay(for: Date())
+            let recent = entries.filter { $0.timestamp >= today }
+            print("\(provider.provider.id): today \(recent.count) entries, \(recent.reduce(0) { $0 + $1.tokens.totalTokens }) tokens; \(entries.count) retained entries")
+        }
+        await ClaudeLogUsageScanner.flushPersistentCacheWrites()
+        print("Probe RSS: \(try rssKiB()) KiB; no model requests or account changes")
+    }
+
     static func ownerRefresh() async throws {
         let reader = OrcaUsageReader.shared
         let source = try await reader.snapshot()

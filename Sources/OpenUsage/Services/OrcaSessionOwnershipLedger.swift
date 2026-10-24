@@ -1,17 +1,7 @@
 import Foundation
 
-struct OrcaCodexHistoryAllocation: Codable, Sendable {
-    static let storageKey = "openusage.orcaCodexHistoryAllocation.v1"
-    var historicalAccountSlot: String
-    var historicalThrough: Double
-    static func load(defaults: UserDefaults = .standard) -> Self? {
-        guard let data = defaults.data(forKey: storageKey) else { return nil }
-        return try? JSONDecoder().decode(Self.self, from: data)
-    }
-}
-
 /// Only continuously observed, unambiguous writers establish a time span. Gaps remain unassigned.
-struct OrcaCodexOwnershipLedger: Codable, Sendable {
+struct OrcaSessionOwnershipLedger: Codable, Sendable {
     struct Span: Codable, Sendable {
         var sessionID: String
         var accountSlot: String
@@ -21,20 +11,20 @@ struct OrcaCodexOwnershipLedger: Codable, Sendable {
     }
     private(set) var spans: [Span] = []
     private var lastObservedAt: Date?
-    private var lastWriters: [String: OrcaCodexWriterState] = [:]
-    private struct OrcaCodexWriterState: Codable, Equatable, Sendable {
+    private var lastWriters: [String: SessionWriterState] = [:]
+    private struct SessionWriterState: Codable, Equatable, Sendable {
         var account: String
         var process: String
     }
 
-    mutating func observe(_ writers: [OrcaCodexWriter], at date: Date) {
+    mutating func observe(_ writers: [OrcaSessionWriter], at date: Date) {
         let grouped = Dictionary(grouping: writers, by: \.sessionID)
-        var next: [String: OrcaCodexWriterState] = [:]
+        var next: [String: SessionWriterState] = [:]
         for (session, records) in grouped {
             let accounts = Set(records.map(\.accountSlot))
             let processes = Set(records.map(\.processKey))
             guard accounts.count == 1, processes.count == 1, let first = records.first else { continue }
-            let state = OrcaCodexWriterState(account: first.accountSlot, process: first.processKey)
+            let state = SessionWriterState(account: first.accountSlot, process: first.processKey)
             next[session] = state
             if lastWriters[session] == state, let previous = lastObservedAt,
                date >= previous, date.timeIntervalSince(previous) <= 45,
@@ -44,8 +34,11 @@ struct OrcaCodexOwnershipLedger: Codable, Sendable {
                }) {
                 spans[index].end = date
             } else {
+                let knownProcess = spans.contains { $0.sessionID == session && $0.processKey == state.process }
+                let provenStart = knownProcess ? nil : first.startedAt
+                let start = provenStart.map { max(date.addingTimeInterval(-32 * 86400), min($0, date)) } ?? date
                 spans.append(Span(sessionID: session, accountSlot: state.account,
-                                  processKey: state.process, start: date, end: date))
+                                  processKey: state.process, start: start, end: date))
             }
         }
         lastWriters = next
@@ -57,6 +50,10 @@ struct OrcaCodexOwnershipLedger: Codable, Sendable {
     mutating func observationFailed() {
         lastWriters = [:]
         lastObservedAt = nil
+    }
+
+    mutating func boundSpanCount(_ maximum: Int) {
+        if spans.count > maximum { spans.removeFirst(spans.count - maximum) }
     }
 
     func owner(sessionID: String?, at date: Date) -> String? {

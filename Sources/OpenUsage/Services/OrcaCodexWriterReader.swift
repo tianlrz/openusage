@@ -1,22 +1,16 @@
 import Foundation
 
-struct OrcaCodexWriter: Equatable, Sendable {
-    var sessionID: String
-    var accountSlot: String
-    var processKey: String
-}
-
 protocol OrcaCodexWriterReading: Sendable {
-    func writers(homes: [String: String]) throws -> [OrcaCodexWriter]
+    func writers(homes: [String: String]) throws -> [OrcaSessionWriter]
 }
 
 /// Observes local writers, not the account selected for future launches. No credentials are retained.
 struct OrcaCodexWriterReader: OrcaCodexWriterReading {
     var runner: ProcessRunning = SystemProcessRunner()
 
-    func writers(homes: [String: String]) throws -> [OrcaCodexWriter] {
+    func writers(homes: [String: String]) throws -> [OrcaSessionWriter] {
         let table = try run("/bin/ps", ["-axo", "pid=,comm="])
-        var result: [OrcaCodexWriter] = []
+        var result: [OrcaSessionWriter] = []
         for line in table.split(separator: "\n") {
             let fields = line.split(maxSplits: 1, whereSeparator: \.isWhitespace)
             guard fields.count == 2, Int(fields[0]) != nil else { continue }
@@ -42,18 +36,18 @@ struct OrcaCodexWriterReader: OrcaCodexWriterReading {
         return result
     }
 
-    static func environmentHome(_ text: String) -> String? {
+    static func environmentHome(_ text: String, key: String = "CODEX_HOME") -> String? {
         guard let expression = try? NSRegularExpression(
-            pattern: #"(?:^|\s)CODEX_HOME=(.*?)(?=\s[A-Za-z_][A-Za-z0-9_]*=|$)"#,
+            pattern: #"(?:^|\s)"# + NSRegularExpression.escapedPattern(for: key) + #"=(.*?)(?=\s[A-Za-z_][A-Za-z0-9_]*=|$)"#,
             options: [.dotMatchesLineSeparators]),
               let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func parseFiles(_ text: String, account: String, processKey: String) -> [OrcaCodexWriter] {
+    static func parseFiles(_ text: String, account: String, processKey: String) -> [OrcaSessionWriter] {
         var access = ""
-        var result: [OrcaCodexWriter] = []
+        var result: [OrcaSessionWriter] = []
         for line in text.split(separator: "\n") {
             if line.hasPrefix("f") { access = "" }
             else if line.hasPrefix("a") { access = String(line.dropFirst()) }
@@ -62,7 +56,7 @@ struct OrcaCodexWriterReader: OrcaCodexWriterReading {
                 guard url.pathExtension == "jsonl" else { continue }
                 let id = String(url.deletingPathExtension().lastPathComponent.suffix(36)).lowercased()
                 guard UUID(uuidString: id) != nil else { continue }
-                result.append(OrcaCodexWriter(sessionID: id, accountSlot: account, processKey: processKey))
+                result.append(OrcaSessionWriter(sessionID: id, accountSlot: account, processKey: processKey))
             }
         }
         return result

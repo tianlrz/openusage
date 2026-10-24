@@ -16,6 +16,10 @@ enum ProviderCatalog {
         if claudeCards.isEmpty {
             providers = [ClaudeProvider()]
         } else {
+            let scopedAccounts = claudeCards.flatMap(\.orcaAccounts).filter(\.profileHome)
+            let claudeOwnership = OrcaClaudeUsageContext(
+                homes: Dictionary(scopedAccounts.map { ($0.slot, $0.home) }, uniquingKeysWith: { first, _ in first }),
+                identities: Dictionary(scopedAccounts.map { ($0.slot, $0.identityKey) }, uniquingKeysWith: { first, _ in first }))
             providers = claudeCards.map { card in
                 let identity = claudeIdentityKeys[card.id] ?? card.identityKey
                 let user = identity.split(separator: "|").first.map(String.init)
@@ -29,7 +33,8 @@ enum ProviderCatalog {
                     accountUUID: user, organizationUUID: card.organizationID,
                     allowsUnattributedSessions: card.allowsUnattributedPiUsage,
                     currentDefaultLoginIdentity: defaultOwner,
-                    additionalConfigDirectories: card.additionalLogDirectories
+                    additionalConfigDirectories: card.additionalLogDirectories,
+                    orcaOwnershipContext: scopedAccounts.isEmpty ? nil : claudeOwnership
                 )
                 return ClaudeProvider(
                     provider: ClaudeProvider.makeProvider(

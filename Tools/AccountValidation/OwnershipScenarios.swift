@@ -18,7 +18,7 @@ final class OrcaCodexOwnershipTests: XCTestCase {
     }
 
     func testConcurrentSessionsFollowTheirOwnWriters() {
-        var ledger = OrcaCodexOwnershipLedger()
+        var ledger = OrcaSessionOwnershipLedger()
         let writers = [writer(a, account: a, process: "1|old"), writer(b, account: b, process: "2|old")]
         ledger.observe(writers, at: base)
         ledger.observe(writers, at: base.addingTimeInterval(15))
@@ -28,19 +28,19 @@ final class OrcaCodexOwnershipTests: XCTestCase {
     }
 
     func testSwitchingAResumedSessionDoesNotMoveEarlierUsage() throws {
-        var ledger = OrcaCodexOwnershipLedger()
+        var ledger = OrcaSessionOwnershipLedger()
         ledger.observe([writer(a, account: a, process: "1|old")], at: base)
         ledger.observe([writer(a, account: a, process: "1|old")], at: base.addingTimeInterval(15))
         ledger.observe([writer(a, account: b, process: "2|new")], at: base.addingTimeInterval(20))
         ledger.observe([writer(a, account: b, process: "2|new")], at: base.addingTimeInterval(35))
-        let restored = try JSONDecoder().decode(OrcaCodexOwnershipLedger.self, from: JSONEncoder().encode(ledger))
+        let restored = try JSONDecoder().decode(OrcaSessionOwnershipLedger.self, from: JSONEncoder().encode(ledger))
         XCTAssertEqual(restored.owner(sessionID: a, at: base.addingTimeInterval(5)), a)
         XCTAssertNil(restored.owner(sessionID: a, at: base.addingTimeInterval(18)))
         XCTAssertEqual(restored.owner(sessionID: a, at: base.addingTimeInterval(25)), b)
     }
 
     func testGapsFailuresAndReusedPIDsDoNotInventOwnership() {
-        var ledger = OrcaCodexOwnershipLedger()
+        var ledger = OrcaSessionOwnershipLedger()
         ledger.observe([writer(a, account: a, process: "1|old")], at: base)
         ledger.observe([writer(a, account: a, process: "1|old")], at: base.addingTimeInterval(90))
         XCTAssertNil(ledger.owner(sessionID: a, at: base.addingTimeInterval(30)))
@@ -52,7 +52,7 @@ final class OrcaCodexOwnershipTests: XCTestCase {
     }
 
     func testHistoricalAllocationAndFuturePartitionsConserveUniqueEvents() {
-        var ledger = OrcaCodexOwnershipLedger()
+        var ledger = OrcaSessionOwnershipLedger()
         let writers = [writer(a, account: a, process: "1"), writer(b, account: b, process: "2")]
         ledger.observe(writers, at: base)
         ledger.observe(writers, at: base.addingTimeInterval(15))
@@ -102,7 +102,7 @@ final class OrcaCodexOwnershipTests: XCTestCase {
                 first.deletingLastPathComponent().path, second.deletingLastPathComponent().path])
         let policy = OrcaCodexHistoryAllocation(historicalAccountSlot: b,
             historicalThrough: now.addingTimeInterval(-90).timeIntervalSince1970)
-        var observed = OrcaCodexOwnershipLedger()
+        var observed = OrcaSessionOwnershipLedger()
         observed.observe([writer(a, account: a, process: "stable")], at: now.addingTimeInterval(-80))
         observed.observe([writer(a, account: a, process: "stable")], at: now.addingTimeInterval(-50))
         try JSONEncoder().encode(observed).write(to: root.appendingPathComponent("ledger.json"))
@@ -146,8 +146,8 @@ final class OrcaCodexOwnershipTests: XCTestCase {
         XCTAssertTrue(provider.provider.id.range(of: #"^codex@[a-f0-9]{8}$"#, options: .regularExpression) != nil)
     }
 
-    private func writer(_ session: String, account: String, process: String) -> OrcaCodexWriter {
-        OrcaCodexWriter(sessionID: session, accountSlot: account, processKey: process)
+    private func writer(_ session: String, account: String, process: String) -> OrcaSessionWriter {
+        OrcaSessionWriter(sessionID: session, accountSlot: account, processKey: process)
     }
     private func event(_ session: String?, offset: Double, tokens: Int) -> CodexLogUsageScanner.Event {
         CodexLogUsageScanner.Event(timestamp: base.addingTimeInterval(offset), model: "gpt-5.2",
@@ -159,5 +159,5 @@ final class OrcaCodexOwnershipTests: XCTestCase {
 }
 
 private struct NoOwnershipWriters: OrcaCodexWriterReading {
-    func writers(homes: [String: String]) throws -> [OrcaCodexWriter] { [] }
+    func writers(homes: [String: String]) throws -> [OrcaSessionWriter] { [] }
 }

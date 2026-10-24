@@ -12,7 +12,7 @@ actor OrcaCodexHistory {
     private let reader: OrcaCodexWriterReading
     private let ledgerURL: URL
     private let allocation: @Sendable () -> OrcaCodexHistoryAllocation?
-    private var ledger = OrcaCodexOwnershipLedger()
+    private var ledger = OrcaSessionOwnershipLedger()
     private var lease: SingleInstanceLock.Token?
     private var sampler: Task<Void, Never>?
     private var storageError: String?
@@ -122,7 +122,7 @@ actor OrcaCodexHistory {
 
     private func reloadLedger() {
         guard FileManager.default.fileExists(atPath: ledgerURL.path) else { return }
-        do { ledger = try JSONDecoder().decode(OrcaCodexOwnershipLedger.self, from: Data(contentsOf: ledgerURL)) }
+        do { ledger = try JSONDecoder().decode(OrcaSessionOwnershipLedger.self, from: Data(contentsOf: ledgerURL)) }
         catch {
             storageError = "Saved account tracking could not be read; existing evidence was left untouched."
             AppLog.error(LogTag.plugin("codex"), "Codex account ownership ledger could not be read")

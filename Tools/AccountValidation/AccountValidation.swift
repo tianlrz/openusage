@@ -27,6 +27,10 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
 }
 @main enum AccountValidation {
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--claude-history-probe") {
+            try await ManagedQuotaProbe.claudeHistory()
+            return
+        }
         if CommandLine.arguments.contains("--owner-quota-probe") {
             try await ManagedQuotaProbe.ownerRefresh()
             return
@@ -107,6 +111,12 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         let persistence = QuotaSnapshotPersistenceTests()
         try persistence.testResetCreditsUseExistingRowAndRejectMissingOrNegativeCounts()
         try await persistence.testExpiredLoginAndRelaunchKeepResetStateUntilSameAccountRecovers()
+        let claudeOwnership = OrcaClaudeOwnershipTests()
+        try claudeOwnership.testScopedSessionReaderChecksLiveProcessHomeStartAndMetadataBounds()
+        claudeOwnership.testProvenProcessStartDoesNotBackfillObservationGaps()
+        try await claudeOwnership.testResumedClaudeHistoryAndAuditSplitAccountsWithoutMovingEarlierTokens()
+        try await claudeOwnership.testAmbiguousConcurrentProcessesAndMissingSessionIDsRemainUnassigned()
+        try await claudeOwnership.testOwnershipCorruptionIsPreservedAndObservationsCoalesce()
         let audit = QuotaAuditTests()
         try await audit.testDistinctAccountsCachedReadingsAndRestart()
         try audit.testWindowsAndTimestampBoundariesNeverBorrowDailyTotals()
@@ -118,7 +128,7 @@ func XCTUnwrap<T>(_ value: T?) throws -> T {
         try audit.testAuditAPIKeepsAccountFiltersAndOriginalReadings()
         try await audit.testStrictClaudeAuditRejectsSelectedAccountFallbackAndSharesOwnershipRules()
         await audit.testTokenBucketsAndNativePricingAreReused()
-        print("PASS: 40 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
+        print("PASS: 45 account-isolation and quota-audit regression scenarios; \(assertions) assertions. Standalone CLT runner, not XCTest.")
     }
 }
 

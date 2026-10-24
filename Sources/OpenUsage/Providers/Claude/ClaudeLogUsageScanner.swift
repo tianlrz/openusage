@@ -23,6 +23,9 @@ actor ClaudeLogUsageScanner {
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Entry>
+    private let orcaOwnershipContext: OrcaClaudeUsageContext?
+    private let runtimeOwnership: OrcaClaudeUsageOwnership
+    private(set) var ownershipWarning: String?
     /// Scoped provider instances pass their stable parse-source identity here. Account or time filters
     /// over the same physical roots deliberately pass the same value and share whole-file records.
     private let cacheIdentityOverride: String?
@@ -53,15 +56,15 @@ actor ClaudeLogUsageScanner {
         var costUSD: Double?
         /// `nil` when the line has no model or the placeholder `<synthetic>` (tokens count, cost is $0).
         var model: String?
+        var sessionID: String? = nil
     }
 
     /// Cards that read the same Claude home share one actor, so the first scan populates both the
     /// in-memory and disk caches and the rest reuse it. Tests inject an isolated memory-only scanner.
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
-        // v2: accept records whose nested `usage.iterations[].model` is null (#1253); cached
-        // parses from v1 silently dropped them, so every file must re-parse once.
-        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 2)
+        // v3 retains session IDs so resumed sessions can be split by verified account intervals.
+        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 3)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -78,6 +81,8 @@ actor ClaudeLogUsageScanner {
         allowsUnattributedSessions: Bool = false,
         currentDefaultLoginIdentity: (@Sendable () -> String?)? = nil,
         additionalConfigDirectories: [String] = [],
+        orcaOwnershipContext: OrcaClaudeUsageContext? = nil,
+        runtimeOwnership: OrcaClaudeUsageOwnership = .shared,
         readOwnershipData: @escaping @Sendable (URL) throws -> Data = {
             try Data(contentsOf: $0, options: .mappedIfSafe)
         }
@@ -90,6 +95,8 @@ actor ClaudeLogUsageScanner {
         self.organizationID = organizationUUID?.lowercased()
         self.accountID = accountUUID?.lowercased()
         self.additionalConfigDirectories = additionalConfigDirectories
+        self.orcaOwnershipContext = orcaOwnershipContext
+        self.runtimeOwnership = runtimeOwnership
         self.allowsUnattributedSessions = allowsUnattributedSessions
         self.currentDefaultLoginIdentity = currentDefaultLoginIdentity ?? {
             let observer = DefaultAccountObserver(environment: environment, homeDirectory: homeDirectory)
@@ -128,7 +135,16 @@ actor ClaudeLogUsageScanner {
         }
 
         var files = Self.usageFiles(under: roots)
-        if organizationID != nil || claimsDefaultHome {
+        var runtimeFilter: ClaudeSessionUsageFilter?
+        if let context = orcaOwnershipContext, let accountID, let organizationID {
+            let snapshot = await runtimeOwnership.snapshot(context: context, now: now)
+            ownershipWarning = snapshot.warning
+            let filter = ClaudeSessionUsageFilter(files: files, target: accountID + "|" + organizationID,
+                ownership: snapshot, historicalFiles: ownedUsageFiles(files,
+                    claimsDefaultHome: false, strictOwnership: true))
+            files = filter.files
+            runtimeFilter = filter
+        } else if organizationID != nil || claimsDefaultHome {
             files = ownedUsageFiles(files, claimsDefaultHome: claimsDefaultHome, strictOwnership: strictOwnership)
         }
         guard !Task.isCancelled else { return nil }
@@ -146,7 +162,8 @@ actor ClaudeLogUsageScanner {
             cacheIdentity: cacheIdentity,
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
-        return Self.dedup(entries)
+        let unique = Self.dedup(entries)
+        return runtimeFilter?.entries(unique) ?? unique
     }
 
     /// Stable source configuration identity rather than the discovered root list: Cowork adds session
@@ -472,7 +489,8 @@ actor ClaudeLogUsageScanner {
             isSidechain: object["isSidechain"] as? Bool ?? false,
             hasSpeed: parsedUsage.hasSpeed,
             costUSD: (object["costUSD"] as? NSNumber)?.doubleValue,
-            model: model
+            model: model,
+            sessionID: (object["sessionId"] as? String ?? object["session_id"] as? String)?.lowercased()
         )
 
         guard let iterations = usage["iterations"] as? [[String: Any]] else { return [parent] }
@@ -494,7 +512,8 @@ actor ClaudeLogUsageScanner {
                 isSidechain: parent.isSidechain,
                 hasSpeed: advisorUsage.hasSpeed,
                 costUSD: nil,
-                model: advisorModel
+                model: advisorModel,
+                sessionID: parent.sessionID
             ))
             advisorIndex += 1
         }
